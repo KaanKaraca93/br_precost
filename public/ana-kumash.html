@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ana Kumaş Sarf — Parametre & Değer Tanımı</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue:        #1D5FA3;
+      --blue-dk:     #154880;
+      --blue-lt:     #e8f0fa;
+      --green:       #2e7d32;
+      --green-lt:    #e8f5e9;
+      --red:         #c62828;
+      --red-lt:      #ffebee;
+      --orange:      #e65100;
+      --orange-lt:   #fff3e0;
+      --gray-50:     #f8f9fa;
+      --gray-100:    #f1f3f5;
+      --gray-200:    #e9ecef;
+      --gray-400:    #adb5bd;
+      --gray-600:    #6c757d;
+      --gray-800:    #343a40;
+      --radius:      6px;
+      --shadow:      0 1px 4px rgba(0,0,0,.1);
+    }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      font-size: 13px;
+      color: var(--gray-800);
+      background: var(--gray-50);
+      padding: 0;
+      min-height: 100vh;
+    }
+
+    /* ── Page Header ──────────────────────────────────── */
+    .page-header {
+      background: var(--blue);
+      color: white;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .page-header h1 { font-size: 14px; font-weight: 600; }
+    .badge { background: rgba(255,255,255,.2); padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+
+    .page-content { padding: 16px 20px; }
+
+    /* ── Selector Bar ─────────────────────────────────── */
+    .selector-bar {
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      box-shadow: var(--shadow);
+    }
+    .sel-group { display: flex; flex-direction: column; gap: 4px; }
+    .sel-group label { font-size: 11px; font-weight: 600; color: var(--gray-600); text-transform: uppercase; letter-spacing: .4px; }
+    .sel-group select,
+    .sel-group input[type="text"] {
+      padding: 6px 10px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius);
+      font-size: 13px;
+      background: white;
+      min-width: 140px;
+      outline: none;
+    }
+    .sel-group select:focus,
+    .sel-group input:focus { border-color: var(--blue); }
+
+    .btn { padding: 7px 16px; border: none; border-radius: var(--radius); font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s; }
+    .btn-primary  { background: var(--blue);  color: white; }
+    .btn-primary:hover  { background: var(--blue-dk); }
+    .btn-primary:disabled { background: var(--gray-400); cursor: not-allowed; }
+    .btn-success  { background: var(--green); color: white; }
+    .btn-success:hover  { background: #1b5e20; }
+    .btn-success:disabled { background: var(--gray-400); cursor: not-allowed; }
+    .btn-ghost    { background: var(--gray-100); color: var(--gray-800); border: 1px solid var(--gray-200); }
+    .btn-ghost:hover { background: var(--gray-200); }
+
+    /* ── Breadcrumb / context label ───────────────────── */
+    .ctx-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .ctx-chip {
+      background: var(--blue-lt);
+      color: var(--blue);
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .ctx-sep { color: var(--gray-400); font-size: 16px; }
+    .step-indicator {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--gray-600);
+    }
+    .step-dot {
+      display: inline-block;
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      text-align: center;
+      line-height: 22px;
+      font-size: 11px;
+      font-weight: 700;
+      margin-right: 3px;
+    }
+    .step-dot.active  { background: var(--blue);  color: white; }
+    .step-dot.done    { background: var(--green); color: white; }
+    .step-dot.pending { background: var(--gray-200); color: var(--gray-600); }
+
+    /* ── Panel ────────────────────────────────────────── */
+    .panel {
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      margin-bottom: 14px;
+    }
+    .panel-header {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--gray-200);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel-title { font-size: 13px; font-weight: 700; }
+    .panel-subtitle { font-size: 11px; color: var(--gray-600); margin-left: auto; }
+    .panel-body { padding: 16px; }
+
+    /* ── State boxes ──────────────────────────────────── */
+    .state-box { text-align: center; padding: 40px 20px; color: var(--gray-600); }
+    .state-box .icon { font-size: 36px; margin-bottom: 8px; }
+
+    /* ── Step 1 — Attribute Selection ─────────────────── */
+    .attr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+
+    .attr-card {
+      border: 2px solid var(--gray-200);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+      user-select: none;
+    }
+    .attr-card:hover { border-color: var(--blue); background: var(--blue-lt); }
+    .attr-card.selected { border-color: var(--blue); background: var(--blue-lt); }
+
+    .attr-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .attr-checkbox {
+      width: 16px; height: 16px;
+      border-radius: 4px;
+      border: 2px solid var(--gray-400);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      transition: all .15s;
+    }
+    .attr-card.selected .attr-checkbox { background: var(--blue); border-color: var(--blue); color: white; font-size: 10px; }
+    .attr-name { font-weight: 700; font-size: 13px; }
+    .attr-count { font-size: 11px; color: var(--gray-600); margin-left: auto; }
+
+    .attr-values { display: flex; flex-wrap: wrap; gap: 4px; }
+    .val-chip {
+      background: var(--gray-100);
+      color: var(--gray-600);
+      padding: 2px 7px;
+      border-radius: 10px;
+      font-size: 11px;
+    }
+    .attr-card.selected .val-chip { background: white; color: var(--blue); }
+
+    .combo-preview {
+      margin-top: 12px;
+      padding: 8px 12px;
+      background: var(--orange-lt);
+      border-radius: var(--radius);
+      font-size: 12px;
+      color: var(--orange);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .combo-preview.ok { background: var(--green-lt); color: var(--green); }
+
+    .step1-footer { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+
+    /* ── Step 2 — Value Matrix ─────────────────────────── */
+    .matrix-note {
+      background: var(--blue-lt);
+      border-left: 3px solid var(--blue);
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--blue);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .matrix-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .matrix-table th {
+      text-align: left;
+      padding: 7px 10px;
+      background: var(--gray-100);
+      border-bottom: 2px solid var(--gray-200);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--gray-600);
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      white-space: nowrap;
+    }
+    .matrix-table th.col-value { color: var(--blue); }
+    .matrix-table td {
+      padding: 5px 10px;
+      border-bottom: 1px solid var(--gray-100);
+      vertical-align: middle;
+    }
+    .matrix-table tr:last-child td { border-bottom: none; }
+    .matrix-table tr:hover td { background: var(--gray-50); }
+
+    .attr-val-cell { font-weight: 600; }
+    .attr-val-cell .combo-chip {
+      display: inline-block;
+      background: var(--blue-lt);
+      color: var(--blue);
+      padding: 2px 7px;
+      border-radius: 10px;
+      font-size: 11px;
+      margin-right: 3px;
+    }
+
+    .consumption-input {
+      width: 100px;
+      padding: 5px 8px;
+      border: 1px solid var(--gray-200);
+      border-radius: 4px;
+      font-size: 13px;
+      text-align: right;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .consumption-input:focus { border-color: var(--blue); }
+    .consumption-input.filled { border-color: var(--green); background: var(--green-lt); }
+    .consumption-input.error  { border-color: var(--red); }
+
+    .status-cell { font-size: 11px; }
+    .status-saved    { color: var(--green); font-weight: 600; }
+    .status-unsaved  { color: var(--orange); }
+    .status-empty    { color: var(--gray-400); }
+
+    .step2-footer { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+    .dirty-warn { font-size: 11px; color: var(--orange); }
+
+    /* ── Progress summary ─────────────────────────────── */
+    .progress-bar-wrap { margin-bottom: 10px; }
+    .progress-label { font-size: 11px; color: var(--gray-600); margin-bottom: 4px; display: flex; justify-content: space-between; }
+    .progress-track { height: 5px; background: var(--gray-200); border-radius: 3px; overflow: hidden; }
+    .progress-fill  { height: 100%; background: var(--green); border-radius: 3px; transition: width .3s; }
+
+    /* ── Toast ────────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 18px; right: 18px;
+      padding: 10px 18px; border-radius: var(--radius);
+      font-size: 13px; font-weight: 600; color: white;
+      box-shadow: 0 4px 16px rgba(0,0,0,.2);
+      transform: translateY(60px); opacity: 0;
+      transition: all .2s; z-index: 9999;
+    }
+    #toast.show { transform: translateY(0); opacity: 1; }
+    #toast.success { background: var(--green); }
+    #toast.error   { background: var(--red); }
+    #toast.info    { background: var(--blue); }
+  </style>
+</head>
+<body>
+
+  <!-- ── Page Header ────────────────────────────────── -->
+  <div class="page-header">
+    <h1>Ana Kumaş Sarf — Parametre & Değer Tanımı</h1>
+    <span class="badge">PreCost v1</span>
+  </div>
+
+  <div class="page-content">
+
+    <!-- ── Selector Bar ─────────────────────────────── -->
+    <div class="selector-bar">
+      <div class="sel-group">
+        <label>Sezon</label>
+        <select id="selSeason">
+          <option value="">Seçiniz</option>
+          <option value="SS26">SS26</option>
+          <option value="FW26">FW26</option>
+          <option value="SS27">SS27</option>
+          <option value="FW27">FW27</option>
+          <option value="SS28">SS28</option>
+        </select>
+      </div>
+      <div class="sel-group">
+        <label>Marka</label>
+        <select id="selBrand">
+          <option value="">Seçiniz</option>
+          <option value="Altınyıldız">Altınyıldız</option>
+          <option value="Beymen Business">Beymen Business</option>
+          <option value="Beymen Club">Beymen Club</option>
+          <option value="Network">Network</option>
+          <option value="Kiğılı">Kiğılı</option>
+        </select>
+      </div>
+      <div class="sel-group">
+        <label>Kategori</label>
+        <input type="text" id="selCategory" placeholder="örn. Ceket" list="catSuggestions" />
+        <datalist id="catSuggestions">
+          <option value="Ceket">
+          <option value="Pantolon">
+          <option value="Gömlek">
+          <option value="Kazak">
+          <option value="Mont">
+          <option value="Etek">
+          <option value="Elbise">
+          <option value="Bluz">
+          <option value="Triko">
+          <option value="Yelek">
+        </datalist>
+      </div>
+      <button class="btn btn-primary" onclick="loadCombination()">Yükle</button>
+    </div>
+
+    <!-- ── Main area ─────────────────────────────────── -->
+    <div id="mainArea">
+      <div class="state-box">
+        <div class="icon">🔍</div>
+        <p>Sezon, marka ve kategori seçip <strong>Yükle</strong>'ye basın</p>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    // ── Config ─────────────────────────────────────────────
+    const API = ""; // same origin — Heroku'da ve local'de çalışır
+
+    // ── State ──────────────────────────────────────────────
+    let season = "", brand = "", styleCategory = "";
+    let allAttrs     = {};   // { "Astar Tipi": ["Tam Astar", ...], ... }
+    let selectedAttrs = [];  // ["Astar Tipi", "Desen"]
+    let matrixRows   = [];   // [{ combo: {}, consumption: null, savedValue: null }]
+    let step = 0;            // 0=idle, 1=attr-select, 2=matrix
+    let dirty = false;
+
+    // ── Boot ───────────────────────────────────────────────
+    (async function boot() {
+      try {
+        const r = await fetch(`${API}/api/ana-kumash/attributes`);
+        allAttrs = await r.json();
+      } catch (e) {
+        showToast("Attributes yüklenemedi: " + e.message, "error");
+      }
+    })();
+
+    // ── Load combination ───────────────────────────────────
+    async function loadCombination() {
+      season        = document.getElementById("selSeason").value.trim();
+      brand         = document.getElementById("selBrand").value.trim();
+      styleCategory = document.getElementById("selCategory").value.trim();
+
+      if (!season || !brand || !styleCategory) {
+        showToast("Sezon, marka ve kategori zorunlu", "error"); return;
+      }
+
+      setMainLoading();
+
+      try {
+        const [configRes, valRes] = await Promise.all([
+          fetch(`${API}/api/ana-kumash/config/${enc(season)}/${enc(brand)}/${enc(styleCategory)}`),
+          fetch(`${API}/api/ana-kumash/values/${enc(season)}/${enc(brand)}/${enc(styleCategory)}`),
+        ]);
+        const config = await configRes.json();
+        const values = await valRes.json();
+
+        selectedAttrs = config.selectedAttrs || [];
+
+        if (selectedAttrs.length > 0) {
+          buildMatrixRows(values);
+          step = 2;
+          renderMatrix();
+        } else {
+          step = 1;
+          renderAttrSelect();
+        }
+      } catch (e) {
+        setMainError(e.message);
+      }
+    }
+
+    // ── Step 1 ─────────────────────────────────────────────
+    function renderAttrSelect() {
+      const cards = Object.entries(allAttrs).map(([name, values]) => {
+        const isSel = selectedAttrs.includes(name);
+        const chips = values.map(v => `<span class="val-chip">${v}</span>`).join("");
+        return `
+          <div class="attr-card ${isSel ? "selected" : ""}" onclick="toggleAttr('${esc(name)}')">
+            <div class="attr-card-top">
+              <div class="attr-checkbox">${isSel ? "✓" : ""}</div>
+              <span class="attr-name">${name}</span>
+              <span class="attr-count">${values.length} değer</span>
+            </div>
+            <div class="attr-values">${chips}</div>
+          </div>
+        `;
+      }).join("");
+
+      document.getElementById("mainArea").innerHTML = `
+        ${ctxBar(1)}
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Etken Parametreleri Seçin</span>
+            <span class="panel-subtitle">Bu kombinasyon için ana kumaş sarfını hangi özellikler belirliyor?</span>
+          </div>
+          <div class="panel-body">
+            <div class="attr-grid" id="attrGrid">${cards}</div>
+            <div id="comboPreview"></div>
+            <div class="step1-footer">
+              <button class="btn btn-primary" onclick="goToMatrix()">Devam →</button>
+            </div>
+          </div>
+        </div>
+      `;
+      updateComboPreview();
+    }
+
+    function toggleAttr(name) {
+      const idx = selectedAttrs.indexOf(name);
+      if (idx === -1) selectedAttrs.push(name);
+      else selectedAttrs.splice(idx, 1);
+      renderAttrSelect();
+    }
+
+    function updateComboPreview() {
+      const count = selectedAttrs.reduce((acc, a) => acc * (allAttrs[a]?.length || 1), 1);
+      const box = document.getElementById("comboPreview");
+      if (!box) return;
+      if (selectedAttrs.length === 0) {
+        box.innerHTML = "";
+        return;
+      }
+      const formula = selectedAttrs.map(a => allAttrs[a].length).join(" × ");
+      const ok = count <= 200;
+      box.innerHTML = `
+        <div class="combo-preview ${ok ? "ok" : ""}">
+          ${ok ? "✓" : "⚠️"}
+          Matris boyutu: ${formula} = <strong>${count} kombinasyon</strong>
+          ${count > 50 ? " — Fazla parametre seçmek matrisi büyütür" : ""}
+        </div>
+      `;
+    }
+
+    async function goToMatrix() {
+      if (selectedAttrs.length === 0) {
+        showToast("En az bir parametre seçin", "error"); return;
+      }
+      try {
+        await fetch(
+          `${API}/api/ana-kumash/config/${enc(season)}/${enc(brand)}/${enc(styleCategory)}`,
+          { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ selectedAttrs }) }
+        );
+        const valRes = await fetch(`${API}/api/ana-kumash/values/${enc(season)}/${enc(brand)}/${enc(styleCategory)}`);
+        const values = await valRes.json();
+        buildMatrixRows(values);
+        step = 2;
+        dirty = false;
+        renderMatrix();
+      } catch (e) {
+        showToast("Hata: " + e.message, "error");
+      }
+    }
+
+    // ── Step 2 ─────────────────────────────────────────────
+    function buildMatrixRows(savedValues) {
+      const arrays = selectedAttrs.map(a => allAttrs[a].map(v => ({ attr: a, val: v })));
+      const combos = cartesian(arrays);
+
+      const valueMap = {};
+      for (const sv of savedValues) {
+        valueMap[comboKey(sv.attrCombo)] = sv.consumption;
+      }
+
+      matrixRows = combos.map(combo => {
+        const obj = {};
+        combo.forEach(({ attr, val }) => { obj[attr] = val; });
+        const savedVal = valueMap[comboKey(obj)] ?? null;
+        return { combo: obj, consumption: savedVal, savedValue: savedVal };
+      });
+    }
+
+    function renderMatrix() {
+      const filled   = matrixRows.filter(r => r.consumption !== null).length;
+      const total    = matrixRows.length;
+      const pct      = total > 0 ? Math.round(filled / total * 100) : 0;
+
+      const attrHeaders = selectedAttrs.map(a => `<th>${a}</th>`).join("");
+      const rows = matrixRows.map((r, i) => {
+        const chips = selectedAttrs.map(a =>
+          `<span class="combo-chip">${r.combo[a]}</span>`
+        ).join("");
+        const val = r.consumption;
+        const cls = val !== null ? "filled" : "";
+        let statusHtml;
+        if (r.savedValue !== null && r.consumption === r.savedValue) {
+          statusHtml = `<span class="status-saved">✓ Kayıtlı</span>`;
+        } else if (r.consumption !== null) {
+          statusHtml = `<span class="status-unsaved">● Değişti</span>`;
+        } else {
+          statusHtml = `<span class="status-empty">— Boş</span>`;
+        }
+        return `
+          <tr>
+            <td class="attr-val-cell">${chips}</td>
+            <td>
+              <input
+                type="number" step="0.001" min="0" max="99.999"
+                class="consumption-input ${cls}"
+                value="${val !== null ? val : ""}"
+                placeholder="0.000"
+                data-idx="${i}"
+                onchange="onValueChange(${i}, this.value)"
+                oninput="onValueInput(${i}, this)"
+              />
+              <span style="font-size:11px;color:var(--gray-600);margin-left:4px">m</span>
+            </td>
+            <td class="status-cell" id="status-${i}">${statusHtml}</td>
+          </tr>
+        `;
+      }).join("");
+
+      document.getElementById("mainArea").innerHTML = `
+        ${ctxBar(2)}
+        <div class="matrix-note">
+          ℹ️ Değerler <strong>150 cm kumaş eni</strong> baz alınarak girilmelidir
+        </div>
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Sarf Değerleri</span>
+            <span class="panel-subtitle">${filled} / ${total} kombinasyon dolu</span>
+          </div>
+          <div class="panel-body">
+            <div class="progress-bar-wrap">
+              <div class="progress-label">
+                <span>Tamamlanma</span><span>${pct}%</span>
+              </div>
+              <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+            </div>
+            <table class="matrix-table">
+              <thead>
+                <tr>
+                  ${attrHeaders}
+                  <th class="col-value">Sarf (m)</th>
+                  <th>Durum</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+            <div class="step2-footer">
+              <button class="btn btn-ghost" onclick="backToAttrs()">← Parametreler</button>
+              <button class="btn btn-success" id="btnSave" onclick="saveValues()" ${!dirty ? "" : ""}>
+                💾 Tümünü Kaydet
+              </button>
+              ${dirty ? `<span class="dirty-warn">⚠️ Kaydedilmemiş değişiklik var</span>` : ""}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function onValueInput(idx, input) {
+      const val = input.value === "" ? null : parseFloat(input.value);
+      if (val !== null && (isNaN(val) || val < 0)) {
+        input.classList.add("error");
+        return;
+      }
+      input.classList.remove("error");
+      input.classList.toggle("filled", val !== null);
+      matrixRows[idx].consumption = val;
+      dirty = true;
+      // update status cell
+      const r = matrixRows[idx];
+      const statusEl = document.getElementById(`status-${idx}`);
+      if (statusEl) {
+        if (val === null) statusEl.innerHTML = `<span class="status-empty">— Boş</span>`;
+        else if (val === r.savedValue) statusEl.innerHTML = `<span class="status-saved">✓ Kayıtlı</span>`;
+        else statusEl.innerHTML = `<span class="status-unsaved">● Değişti</span>`;
+      }
+    }
+
+    function onValueChange(idx, rawVal) {
+      matrixRows[idx].consumption = rawVal === "" ? null : parseFloat(rawVal);
+      dirty = true;
+    }
+
+    function backToAttrs() {
+      if (dirty && !confirm("Kaydedilmemiş değişiklikler var. Devam etmek istiyor musunuz?")) return;
+      step = 1;
+      dirty = false;
+      renderAttrSelect();
+    }
+
+    async function saveValues() {
+      const values = matrixRows
+        .filter(r => r.consumption !== null && !isNaN(r.consumption))
+        .map(r => ({ attrCombo: r.combo, consumption: r.consumption, unit: "m" }));
+
+      try {
+        const res = await fetch(
+          `${API}/api/ana-kumash/values/${enc(season)}/${enc(brand)}/${enc(styleCategory)}`,
+          { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ values }) }
+        );
+        if (!res.ok) throw new Error(await res.text());
+        // update savedValues
+        matrixRows.forEach(r => { r.savedValue = r.consumption; });
+        dirty = false;
+        renderMatrix();
+        showToast(`${values.length} değer kaydedildi ✓`, "success");
+      } catch (e) {
+        showToast("Kayıt hatası: " + e.message, "error");
+      }
+    }
+
+    // ── Helpers ────────────────────────────────────────────
+    function cartesian(arrays) {
+      if (arrays.length === 0) return [[]];
+      return arrays.reduce((acc, arr) => {
+        const out = [];
+        for (const a of acc) for (const b of arr) out.push([...a, b]);
+        return out;
+      }, [[]]);
+    }
+
+    function comboKey(combo) {
+      return JSON.stringify(
+        Object.fromEntries(Object.entries(combo).sort(([a], [b]) => a.localeCompare(b)))
+      );
+    }
+
+    function enc(s) { return encodeURIComponent(s); }
+    function esc(s) { return s.replace(/'/g, "\\'"); }
+
+    function ctxBar(activeStep) {
+      const stepNames = ["Parametre Seçimi", "Değer Girişi"];
+      const dots = [1, 2].map(n => {
+        const cls = n < activeStep ? "done" : n === activeStep ? "active" : "pending";
+        return `<span class="step-dot ${cls}">${n < activeStep ? "✓" : n}</span>`;
+      }).join("");
+      return `
+        <div class="ctx-bar">
+          <span class="ctx-chip">${season}</span>
+          <span class="ctx-sep">/</span>
+          <span class="ctx-chip">${brand}</span>
+          <span class="ctx-sep">/</span>
+          <span class="ctx-chip">${styleCategory}</span>
+          <span class="step-indicator">
+            ${dots} <span style="font-size:11px;color:var(--gray-600)">${stepNames[activeStep - 1]}</span>
+          </span>
+        </div>
+      `;
+    }
+
+    function setMainLoading() {
+      document.getElementById("mainArea").innerHTML =
+        `<div class="state-box"><div class="icon">⏳</div><p>Yükleniyor…</p></div>`;
+    }
+    function setMainError(msg) {
+      document.getElementById("mainArea").innerHTML =
+        `<div class="state-box"><div class="icon">⚠️</div><p>Hata: ${msg}</p></div>`;
+    }
+
+    let toastTimer;
+    function showToast(msg, type = "success") {
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.className = `show ${type}`;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { t.className = ""; }, 3200);
+    }
+  </script>
+</body>
+</html>
