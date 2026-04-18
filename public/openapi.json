@@ -1,0 +1,262 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "PreCost API",
+    "description": "Altınyıldız ön maliyet parametre ve sarf değeri yönetimi. Sezon / Marka / Kategori bazlı maliyet parametrelerini ve kombinasyon bazlı sarf değerlerini depolar.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Altınyıldız IT"
+    }
+  },
+  "host": "brprecost-58854d65e626.herokuapp.com",
+  "basePath": "/",
+  "schemes": ["https"],
+  "consumes": ["application/json"],
+  "produces": ["application/json"],
+  "paths": {
+
+    "/api/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Sistem sağlık kontrolü",
+        "tags": ["System"],
+        "responses": {
+          "200": {
+            "description": "Sistem çalışıyor",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "status":    { "type": "string", "example": "ok" },
+                "timestamp": { "type": "string", "format": "date-time" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/ana-kumash/attributes": {
+      "get": {
+        "operationId": "getAnaKumashAttributes",
+        "summary": "Maliyet parametresi olarak kullanılabilecek attribute listesi",
+        "description": "Her attribute adı ve olası değerlerini döner. Değerler PLM GenericLookUp'tan beslenir.",
+        "tags": ["Ana Kumaş"],
+        "responses": {
+          "200": {
+            "description": "Attribute adı → değer listesi map'i",
+            "schema": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "example": {
+                "Astar Tipi": ["Tam Astar", "Yarım Astar", "Astarsız"],
+                "Desen Tipi": ["Düz", "Desenli", "Ekoseli"]
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/ana-kumash/list": {
+      "get": {
+        "operationId": "listAnaKumashConfigs",
+        "summary": "Kayıtlı tüm sezon/marka/kategori kombinasyonlarını listeler",
+        "tags": ["Ana Kumaş"],
+        "responses": {
+          "200": {
+            "description": "Kombinasyon listesi",
+            "schema": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/ComboKey" }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/ana-kumash/config/{season}/{brand}/{styleCategory}": {
+      "get": {
+        "operationId": "getAnaKumashConfig",
+        "summary": "Bir kombinasyon için seçili maliyet parametrelerini döner",
+        "tags": ["Ana Kumaş"],
+        "parameters": [
+          { "in": "path", "name": "season",        "required": true, "type": "string", "example": "SS27" },
+          { "in": "path", "name": "brand",          "required": true, "type": "string", "example": "Beymen Business" },
+          { "in": "path", "name": "styleCategory",  "required": true, "type": "string", "example": "Ceket" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Seçili attribute listesi",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "selectedAttrs": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "example": ["Astar Tipi", "Desen Tipi"]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "saveAnaKumashConfig",
+        "summary": "Bir kombinasyon için maliyet parametrelerini kaydeder",
+        "description": "Attribute listesi değişmişse o kombinasyonun tüm sarf değerleri silinir.",
+        "tags": ["Ana Kumaş"],
+        "parameters": [
+          { "in": "path", "name": "season",        "required": true, "type": "string" },
+          { "in": "path", "name": "brand",          "required": true, "type": "string" },
+          { "in": "path", "name": "styleCategory",  "required": true, "type": "string" },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": ["selectedAttrs"],
+              "properties": {
+                "selectedAttrs": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "example": ["Astar Tipi", "Desen Tipi"]
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Kayıt başarılı",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success":     { "type": "boolean" },
+                "selectedAttrs": { "type": "array", "items": { "type": "string" } },
+                "valuesReset": {
+                  "type": "boolean",
+                  "description": "true ise attribute listesi değişti ve eski sarf değerleri silindi"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/ana-kumash/values/{season}/{brand}/{styleCategory}": {
+      "get": {
+        "operationId": "getAnaKumashValues",
+        "summary": "Bir kombinasyon için kayıtlı sarf değerlerini döner",
+        "tags": ["Ana Kumaş"],
+        "parameters": [
+          { "in": "path", "name": "season",        "required": true, "type": "string", "example": "SS27" },
+          { "in": "path", "name": "brand",          "required": true, "type": "string", "example": "Beymen Business" },
+          { "in": "path", "name": "styleCategory",  "required": true, "type": "string", "example": "Ceket" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sarf değerleri listesi",
+            "schema": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/ConsumptionValue" }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "saveAnaKumashValues",
+        "summary": "Bir kombinasyon için sarf değerlerini toplu kaydeder (upsert)",
+        "description": "Gönderilen satırlar upsert edilir. Gönderilmeyen eski satırlar korunur.",
+        "tags": ["Ana Kumaş"],
+        "parameters": [
+          { "in": "path", "name": "season",        "required": true, "type": "string" },
+          { "in": "path", "name": "brand",          "required": true, "type": "string" },
+          { "in": "path", "name": "styleCategory",  "required": true, "type": "string" },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": ["values"],
+              "properties": {
+                "values": {
+                  "type": "array",
+                  "items": { "$ref": "#/definitions/ConsumptionValueInput" }
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Kayıt başarılı",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": { "type": "boolean" },
+                "saved":   { "type": "integer", "description": "Kaydedilen satır sayısı" }
+              }
+            }
+          }
+        }
+      }
+    }
+
+  },
+
+  "definitions": {
+
+    "ComboKey": {
+      "type": "object",
+      "properties": {
+        "season":        { "type": "string", "example": "SS27" },
+        "brand":         { "type": "string", "example": "Beymen Business" },
+        "styleCategory": { "type": "string", "example": "Ceket" }
+      }
+    },
+
+    "ConsumptionValue": {
+      "type": "object",
+      "properties": {
+        "attrCombo": {
+          "type": "object",
+          "description": "Attribute adı → değer map'i",
+          "additionalProperties": { "type": "string" },
+          "example": { "Astar Tipi": "Tam Astar", "Desen Tipi": "Düz" }
+        },
+        "consumption": {
+          "type": "number",
+          "format": "float",
+          "description": "Kumaş sarfı (metre, 150cm en baz alınır)",
+          "example": 2.1
+        },
+        "unit": { "type": "string", "example": "m" }
+      }
+    },
+
+    "ConsumptionValueInput": {
+      "type": "object",
+      "required": ["attrCombo", "consumption"],
+      "properties": {
+        "attrCombo": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "example": { "Astar Tipi": "Tam Astar", "Desen Tipi": "Düz" }
+        },
+        "consumption": {
+          "type": "number",
+          "format": "float",
+          "example": 2.1
+        },
+        "unit": { "type": "string", "default": "m" }
+      }
+    }
+
+  }
+}

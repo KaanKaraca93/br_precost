@@ -5,14 +5,14 @@ const storage = require("../storage");
 function sortedKey(arr) {
   return [...arr].sort().join("|");
 }
-const { ATTRIBUTES } = require("../attributes");
+const { getCostAttributes } = require("../attributes");
 
 const COST_CATEGORY = "ana-kumash";
 
 // GET /api/ana-kumash/attributes
-// Kullanılabilir tüm attribute adları ve değerlerini döner
+// Maliyet parametresi olarak kullanılabilecek attribute adları ve değerlerini döner
 router.get("/attributes", (req, res) => {
-  res.json(ATTRIBUTES);
+  res.json(getCostAttributes());
 });
 
 // GET /api/ana-kumash/list
@@ -51,6 +51,7 @@ router.post("/config/:season/:brand/:styleCategory", async (req, res) => {
     return res.status(400).json({ error: "selectedAttrs must be an array" });
   }
 
+  const ATTRIBUTES = getCostAttributes();
   const invalid = selectedAttrs.filter(a => !ATTRIBUTES[a]);
   if (invalid.length > 0) {
     return res.status(400).json({ error: `Unknown attributes: ${invalid.join(", ")}` });
