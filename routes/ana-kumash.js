@@ -1,6 +1,10 @@
 const express = require("express");
 const router  = express.Router();
 const storage = require("../storage");
+
+function sortedKey(arr) {
+  return [...arr].sort().join("|");
+}
 const { ATTRIBUTES } = require("../attributes");
 
 const COST_CATEGORY = "ana-kumash";
@@ -37,7 +41,8 @@ router.get("/config/:season/:brand/:styleCategory", async (req, res) => {
 });
 
 // POST /api/ana-kumash/config/:season/:brand/:styleCategory
-// Seçili attribute'ları kaydeder
+// Seçili attribute'ları kaydeder.
+// Attribute listesi değiştiyse o kombinasyonun tüm sarf değerleri silinir.
 router.post("/config/:season/:brand/:styleCategory", async (req, res) => {
   const { season, brand, styleCategory } = req.params;
   const { selectedAttrs } = req.body;
@@ -52,8 +57,19 @@ router.post("/config/:season/:brand/:styleCategory", async (req, res) => {
   }
 
   try {
+    const existing = await storage.getConfig(COST_CATEGORY, season, brand, styleCategory);
+
+    // Attribute listesi değiştiyse tüm sarf değerlerini temizle
+    const attrsChanged =
+      existing !== null &&
+      sortedKey(existing.selectedAttrs) !== sortedKey(selectedAttrs);
+
+    if (attrsChanged) {
+      await storage.deleteAllValues(COST_CATEGORY, season, brand, styleCategory);
+    }
+
     await storage.saveConfig(COST_CATEGORY, season, brand, styleCategory, selectedAttrs);
-    res.json({ success: true, selectedAttrs });
+    res.json({ success: true, selectedAttrs, valuesReset: attrsChanged });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

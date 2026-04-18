@@ -363,10 +363,11 @@
 
     // ── State ──────────────────────────────────────────────
     let season = "", brand = "", styleCategory = "";
-    let allAttrs     = {};   // { "Astar Tipi": ["Tam Astar", ...], ... }
-    let selectedAttrs = [];  // ["Astar Tipi", "Desen"]
-    let matrixRows   = [];   // [{ combo: {}, consumption: null, savedValue: null }]
-    let step = 0;            // 0=idle, 1=attr-select, 2=matrix
+    let allAttrs      = {};   // { "Astar Tipi": ["Tam Astar", ...], ... }
+    let selectedAttrs = [];   // ["Astar Tipi", "Desen"] — working copy in step 1
+    let originalAttrs = [];   // selectedAttrs as loaded from server (for change detection)
+    let matrixRows    = [];   // [{ combo: {}, consumption: null, savedValue: null }]
+    let step  = 0;            // 0=idle, 1=attr-select, 2=matrix
     let dirty = false;
 
     // ── Boot ───────────────────────────────────────────────
@@ -400,6 +401,7 @@
         const values = await valRes.json();
 
         selectedAttrs = config.selectedAttrs || [];
+        originalAttrs = [...selectedAttrs]; // sunucudan gelen orijinal liste
 
         if (selectedAttrs.length > 0) {
           buildMatrixRows(values);
@@ -480,18 +482,38 @@
       if (selectedAttrs.length === 0) {
         showToast("En az bir parametre seçin", "error"); return;
       }
+
+      // Attribute listesi değiştiyse kullanıcıyı uyar
+      const attrsChanged = sortedKey(selectedAttrs) !== sortedKey(originalAttrs);
+      if (attrsChanged && originalAttrs.length > 0) {
+        const ok = confirm(
+          "Parametre seçimi değiştirildi.\n\n" +
+          "Bu kombinasyona ait tüm kayıtlı sarf değerleri silinecek ve yeniden girilmesi gerekecek.\n\n" +
+          "Devam etmek istiyor musunuz?"
+        );
+        if (!ok) return;
+      }
+
       try {
-        await fetch(
+        const configRes = await fetch(
           `${API}/api/ana-kumash/config/${enc(season)}/${enc(brand)}/${enc(styleCategory)}`,
           { method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ selectedAttrs }) }
         );
+        const configData = await configRes.json();
+
         const valRes = await fetch(`${API}/api/ana-kumash/values/${enc(season)}/${enc(brand)}/${enc(styleCategory)}`);
         const values = await valRes.json();
+
+        originalAttrs = [...selectedAttrs]; // artık bu liste kaydedildi, orijinal güncelle
         buildMatrixRows(values);
         step = 2;
         dirty = false;
         renderMatrix();
+
+        if (configData.valuesReset) {
+          showToast("Parametre listesi değişti — eski sarf değerleri temizlendi", "info");
+        }
       } catch (e) {
         showToast("Hata: " + e.message, "error");
       }
@@ -620,7 +642,14 @@
     }
 
     function backToAttrs() {
-      if (dirty && !confirm("Kaydedilmemiş değişiklikler var. Devam etmek istiyor musunuz?")) return;
+      const hasSavedValues = matrixRows.some(r => r.savedValue !== null);
+      const msg = dirty
+        ? "Kaydedilmemiş değişiklikler var.\n\nParametre seçimini değiştirirseniz mevcut sarf değerleri silinir. Devam etmek istiyor musunuz?"
+        : hasSavedValues
+          ? "Parametre seçimine döneceğiniz. Kayıtlı seçimi değiştirirseniz bu kombinasyonun tüm sarf değerleri silinir.\n\nDevam etmek istiyor musunuz?"
+          : null;
+
+      if (msg && !confirm(msg)) return;
       step = 1;
       dirty = false;
       renderAttrSelect();
@@ -649,6 +678,8 @@
     }
 
     // ── Helpers ────────────────────────────────────────────
+    function sortedKey(arr) { return [...arr].sort().join("|"); }
+
     function cartesian(arrays) {
       if (arrays.length === 0) return [[]];
       return arrays.reduce((acc, arr) => {

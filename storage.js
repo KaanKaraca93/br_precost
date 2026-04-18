@@ -118,4 +118,17 @@ async function listConfigs(costCategory) {
   return rows;
 }
 
-module.exports = { getConfig, saveConfig, getValues, bulkSaveValues, listConfigs };
+async function deleteAllValues(costCategory, season, brand, styleCategory) {
+  if (!USE_DB) {
+    delete mem.values[memKey(costCategory, season, brand, styleCategory)];
+    return;
+  }
+  const db = getPool();
+  await db.query(
+    `DELETE FROM consumption_values
+     WHERE cost_category=$1 AND season=$2 AND brand=$3 AND style_category=$4`,
+    [costCategory, season, brand, styleCategory]
+  );
+}
+
+module.exports = { getConfig, saveConfig, getValues, bulkSaveValues, deleteAllValues, listConfigs };
