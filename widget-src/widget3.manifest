@@ -1,0 +1,22 @@
+{
+  "widgetId": "tenant.altinyildiz.precost.cacherefresh",
+  "type": "inline",
+  "framework": "jquery",
+  "name": "PreCost - Cache Refresh",
+  "version": "1.0.0",
+  "displayVersion": "1.0.0.20260420-090000",
+  "author": "tenant",
+  "category": "application",
+  "applicationLogicalId": "lid://infor.homepages",
+  "moduleName": "widget",
+  "localization": {
+    "en-US": {
+      "widgetTitle": "PreCost - Lookup Cache Refresh",
+      "widgetDescription": "Manuel olarak PLM lookup verilerini Heroku cache'ine yeniler"
+    },
+    "tr-TR": {
+      "widgetTitle": "PreCost - Lookup Cache Yönetimi",
+      "widgetDescription": "Manuel olarak PLM lookup verilerini Heroku cache'ine yeniler"
+    }
+  }
+}

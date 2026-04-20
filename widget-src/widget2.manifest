@@ -8,7 +8,7 @@
   "author": "tenant",
   "category": "application",
   "applicationLogicalId": "lid://infor.homepages",
-  "moduleName": "widget2",
+  "moduleName": "widget",
   "localization": {
     "en-US": {
       "widgetTitle": "PreCost - Cost Missing Models",

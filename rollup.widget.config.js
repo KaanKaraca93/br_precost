@@ -28,5 +28,6 @@ const buildConfig = (inputFile, outputFile, amdId) => ({
 
 module.exports = [
   buildConfig("widget.ts",  "widget.js",  "widget"),
-  buildConfig("widget2.ts", "widget2.js", "widget2"),
+  buildConfig("widget2.ts", "widget2.js", "widget"),
+  buildConfig("widget3.ts", "widget3.js", "widget"),
 ];
