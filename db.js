@@ -59,6 +59,10 @@ async function init() {
       seq          INT          DEFAULT 0
     );
 
+    -- Mevcut tabloda value_id yoksa ekle. Index DAHA SONRA oluşturulmalı,
+    -- aksi halde eski schema üstünde "column does not exist" hatası verir.
+    ALTER TABLE lookup_values ADD COLUMN IF NOT EXISTS value_id VARCHAR(100);
+
     CREATE INDEX IF NOT EXISTS idx_lookup_values_attr     ON lookup_values(attribute_id);
     CREATE INDEX IF NOT EXISTS idx_lookup_values_value_id ON lookup_values(value_id);
 
@@ -66,9 +70,6 @@ async function init() {
       key   VARCHAR(50) PRIMARY KEY,
       value TEXT NOT NULL
     );
-
-    ALTER TABLE lookup_values ADD COLUMN IF NOT EXISTS value_id VARCHAR(100);
-    CREATE INDEX IF NOT EXISTS idx_lookup_values_value_id_2 ON lookup_values(value_id);
   `);
 
   console.log("[db] Tables ready");
