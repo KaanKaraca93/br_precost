@@ -1,0 +1,22 @@
+{
+  "widgetId": "tenant.altinyildiz.precost.costmissing",
+  "type": "inline",
+  "framework": "jquery",
+  "name": "PreCost - Cost Missing",
+  "version": "1.0.0",
+  "displayVersion": "1.0.0.20260418-200000",
+  "author": "tenant",
+  "category": "application",
+  "applicationLogicalId": "lid://infor.homepages",
+  "moduleName": "widget2",
+  "localization": {
+    "en-US": {
+      "widgetTitle": "PreCost - Cost Missing Models",
+      "widgetDescription": "Ana kumaş sarfı eksik modelleri listeler ve kayıtlı parametrelerden öneri üretir"
+    },
+    "tr-TR": {
+      "widgetTitle": "PreCost - Maliyeti Eksik Modeller",
+      "widgetDescription": "Ana kumaş sarfı eksik modelleri listeler ve kayıtlı parametrelerden öneri üretir"
+    }
+  }
+}

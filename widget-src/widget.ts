@@ -24,6 +24,27 @@ const STANDARD_COST_MAP: { [id: number]: string } = {
   234: "Kumaş Tipi",
 };
 
+// Reference GlRefId'leri — UI'da gösterilmez, sadece cache'lenir (Widget 2 kullanır)
+const REFERENCE_MAP: { [id: number]: string } = {
+  197: "Kumaş Eni",   // BomLine.UserDefinedField12 → cm değeri (Code alanından okunur)
+};
+
+// Maliyet kategorileri — şimdilik sadece "ana-kumash" tam implementasyonlu
+interface CostCategory {
+  key:    string;
+  icon:   string;
+  title:  string;
+  desc:   string;
+  status: "ready" | "wip";
+}
+const COST_CATEGORIES: CostCategory[] = [
+  { key: "ana-kumash",      icon: "🧵", title: "Ana Kumaş Sarf",       desc: "Sezon/marka/kategori bazlı ana kumaş sarf parametreleri", status: "ready" },
+  { key: "astar-garni",     icon: "🧶", title: "Astar ve Garni Sarf",  desc: "Astar ve garni malzeme sarf değerleri",                  status: "wip"   },
+  { key: "iscilik",         icon: "👷", title: "İşçilik",              desc: "İşçilik maliyet bileşenleri",                            status: "wip"   },
+  { key: "uretim-paket",    icon: "📦", title: "Üretim & Paketleme",   desc: "Üretim ve paketleme maliyetleri",                        status: "wip"   },
+  { key: "malzeme",         icon: "🔩", title: "Malzeme",              desc: "Aksesuar ve diğer malzeme maliyetleri",                  status: "wip"   },
+];
+
 interface AttributeMap     { [name: string]: string[] }
 interface AttrCombo        { [name: string]: string }
 interface MatrixRow        { combo: AttrCombo; consumption: number | null; savedValue: number | null }
@@ -41,6 +62,7 @@ class AnaKumashWidget implements IWidgetInstance {
   private statusFilter:  string = "";
   private lastRefreshedAt: string | null = null;
   private refreshing:    boolean = false;
+  private currentCategory: string | null = null;
 
   private season        = "";
   private brand         = "";
@@ -54,6 +76,7 @@ class AnaKumashWidget implements IWidgetInstance {
     this.renderShell();
     this.bindAll();
     this.fetchAttributes();
+    this.renderCategoryPicker();
   }
 
   settingsSaved(): void {}
@@ -97,23 +120,26 @@ class AnaKumashWidget implements IWidgetInstance {
   }
 
   private populateSelectors(): void {
-    const mkOpts = (items: string[]) =>
-      '<option value="">Seçiniz</option>' +
-      items.map(v => `<option value="${esc(v)}">${v}</option>`).join("");
-
-    this.$el.find("#ak-season").html(mkOpts(this.selectorData["Sezon"]    || [])).prop("disabled", false);
-    this.$el.find("#ak-brand") .html(mkOpts(this.selectorData["Marka"]    || [])).prop("disabled", false);
-    this.$el.find("#ak-cat")   .html(mkOpts(this.selectorData["Kategori"] || [])).prop("disabled", false);
-    this.$el.find("#ak-load")  .prop("disabled", false).css("opacity", "1");
-
     const hint = this.lastRefreshedAt
       ? `Son güncelleme: ${this.formatAge(this.lastRefreshedAt)}`
       : "İlk yükleme yapılıyor…";
     this.$el.find("#ak-cache-info").text(hint);
 
-    if (Object.keys(this.allAttrs).length === 0 && (this.selectorData["Sezon"] || []).length === 0) {
-      this.setMain(this.emptyState("⏳", "PLM'den değer listeleri çekiliyor… Bu ilk seferinde 10–20 sn sürebilir."));
-    } else {
+    // Selector'lar sadece Ana Kumaş ekranındayken DOM'da var
+    if (this.currentCategory !== "ana-kumash") return;
+    if (this.$el.find("#ak-season").length === 0) return;
+
+    const mkOpts = (items: string[]) =>
+      '<option value="">Seçiniz</option>' +
+      items.map(v => `<option value="${esc(v)}">${v}</option>`).join("");
+
+    this.$el.find("#ak-season").html(mkOpts(this.selectorData["Sezon"]    || [])).prop("disabled", false).css("opacity", "1");
+    this.$el.find("#ak-brand") .html(mkOpts(this.selectorData["Marka"]    || [])).prop("disabled", false).css("opacity", "1");
+    this.$el.find("#ak-cat")   .html(mkOpts(this.selectorData["Kategori"] || [])).prop("disabled", false).css("opacity", "1");
+    this.$el.find("#ak-load")  .prop("disabled", false).css("opacity", "1");
+
+    if (this.$el.find("#ak-main").children().length === 0 ||
+        this.$el.find("#ak-main").text().indexOf("yükleniyor") !== -1) {
       this.setMain(this.emptyState("🔍", "Sezon, marka ve kategori seçip <strong>Yükle</strong>'ye basın"));
     }
   }
@@ -176,7 +202,7 @@ class AnaKumashWidget implements IWidgetInstance {
       const values = lookupItems
         .filter(it => it.GlrefId === id && it.Status === 1 && it.Name)
         .sort((a, b) => (a.sequence || 0) - (b.sequence || 0))
-        .map(it => ({ name: String(it.Name).trim(), code: it.Code || null, seq: it.sequence || 0 }));
+        .map(it => ({ id: String(it.GlValId), name: String(it.Name).trim(), code: it.Code || null, seq: it.sequence || 0 }));
       return { key: label, sourceId: String(id), values };
     });
 
@@ -187,7 +213,7 @@ class AnaKumashWidget implements IWidgetInstance {
       const values = lookupItems
         .filter(it => it.GlrefId === id && it.Status === 1 && it.Name)
         .sort((a, b) => (a.sequence || 0) - (b.sequence || 0))
-        .map(it => ({ name: String(it.Name).trim(), code: it.Code || null, seq: it.sequence || 0 }));
+        .map(it => ({ id: String(it.GlValId), name: String(it.Name).trim(), code: it.Code || null, seq: it.sequence || 0 }));
       return { key: label, source: "standard", sourceId: String(id), values };
     });
 
@@ -197,7 +223,7 @@ class AnaKumashWidget implements IWidgetInstance {
       if (d.Status !== 1 || !d.Name) continue;
       const k = d.ExtFldId;
       if (!extDropByFld[k]) extDropByFld[k] = [];
-      extDropByFld[k].push({ name: String(d.Name).trim(), code: d.Code || null, seq: d.Seq || 0 });
+      extDropByFld[k].push({ id: String(d.ExtFldDropDownId), name: String(d.Name).trim(), code: d.Code || null, seq: d.Seq || 0 });
     }
 
     const extendedCost = extDefItems
@@ -209,7 +235,18 @@ class AnaKumashWidget implements IWidgetInstance {
       })
       .filter(e => e.values.length > 0); // Boş dropdown'ları gönderme
 
-    return { selectors, costAttrs: [...standardCost, ...extendedCost] };
+    // 4) Reference (yalnızca cache, UI'da gösterilmez)
+    const references = Object.keys(REFERENCE_MAP).map(idStr => {
+      const id    = parseInt(idStr, 10);
+      const label = REFERENCE_MAP[id];
+      const values = lookupItems
+        .filter(it => it.GlrefId === id && it.Status === 1 && it.Name)
+        .sort((a, b) => (a.sequence || 0) - (b.sequence || 0))
+        .map(it => ({ id: String(it.GlValId), name: String(it.Name).trim(), code: it.Code || null, seq: it.sequence || 0 }));
+      return { key: label, source: "standard", sourceId: String(id), values };
+    });
+
+    return { selectors, costAttrs: [...standardCost, ...extendedCost], references };
   }
 
   private formatAge(iso: string): string {
@@ -226,6 +263,13 @@ class AnaKumashWidget implements IWidgetInstance {
   // ── One-time event binding ─────────────────────────────────────────────────
 
   private bindAll(): void {
+    // Kategori seçici
+    this.$el.on("click", "[data-cat]", (e: JQueryEventObject) => {
+      const key = $(e.currentTarget).attr("data-cat") as string;
+      this.enterCategory(key);
+    });
+    this.$el.on("click", "#ak-back-home, #ak-back-home2", () => this.attemptBackHome());
+
     // Selector bar
     this.$el.on("click", "#ak-load", () => this.loadCombination());
 
@@ -248,30 +292,18 @@ class AnaKumashWidget implements IWidgetInstance {
   // ── Shell ─────────────────────────────────────────────────────────────────
 
   private renderShell(): void {
-    const loading = '<option value="">Yükleniyor…</option>';
-
     this.$el.html(`
       <div style="font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#343a40;background:#f8f9fa;min-height:400px;position:relative;">
 
         <div style="background:#1D5FA3;color:white;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
-          <span style="font-size:14px;font-weight:600;">Ana Kumaş Sarf — Parametre &amp; Değer Tanımı</span>
+          <span id="ak-title" style="font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px;">PreCost — Maliyet Parametre Yönetimi</span>
           <span style="display:flex;align-items:center;gap:8px;">
             <span id="ak-cache-info" style="font-size:11px;color:rgba(255,255,255,.85);"></span>
             <span style="background:rgba(255,255,255,.2);padding:2px 8px;border-radius:10px;font-size:11px;">PreCost v1</span>
           </span>
         </div>
 
-        <div style="padding:12px 16px;">
-
-          <div style="background:white;border:1px solid #e9ecef;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;box-shadow:0 1px 4px rgba(0,0,0,.08);">
-            ${this.selGroup("Sezon",    "ak-season", loading, true)}
-            ${this.selGroup("Marka",    "ak-brand",  loading, true)}
-            ${this.selGroup("Kategori", "ak-cat",    loading, true)}
-            <button id="ak-load" disabled style="padding:7px 16px;background:#1D5FA3;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;opacity:.5;">Yükle</button>
-          </div>
-
-          <div id="ak-main">${this.emptyState("⏳", "PLM değer listeleri yükleniyor…")}</div>
-        </div>
+        <div id="ak-content" style="padding:12px 16px;"></div>
 
         <!-- Custom confirm modal -->
         <div id="ak-modal" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:999;align-items:center;justify-content:center;">
@@ -288,6 +320,98 @@ class AnaKumashWidget implements IWidgetInstance {
       </div>
     `);
   }
+
+  // ── Kategori seçici (landing) ─────────────────────────────────────────────
+
+  private renderCategoryPicker(): void {
+    this.currentCategory = null;
+    this.$el.find("#ak-title").html("PreCost — Maliyet Parametre Yönetimi");
+
+    const cards = COST_CATEGORIES.map(c => {
+      const ready = c.status === "ready";
+      const badge = ready
+        ? `<span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">Hazır</span>`
+        : `<span style="background:#fff3e0;color:#e65100;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">Yapım Aşamasında</span>`;
+      const cursor  = ready ? "pointer" : "not-allowed";
+      const opacity = ready ? "1" : ".55";
+      const hover   = ready ? "border-color:#1D5FA3;" : "";
+      return `<div data-cat="${esc(c.key)}" style="background:white;border:2px solid #e9ecef;border-radius:8px;padding:16px;cursor:${cursor};opacity:${opacity};box-shadow:0 1px 4px rgba(0,0,0,.06);transition:border-color .15s;" onmouseover="this.style.borderColor='${ready ? "#1D5FA3" : "#e9ecef"}'" onmouseout="this.style.borderColor='#e9ecef'">
+        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:8px;">
+          <div style="font-size:28px;line-height:1;">${c.icon}</div>
+          <div style="flex:1;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+              <span style="font-size:14px;font-weight:700;color:#343a40;">${c.title}</span>
+              ${badge}
+            </div>
+            <div style="font-size:12px;color:#6c757d;line-height:1.4;">${c.desc}</div>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+
+    this.setContent(`
+      <div style="margin-bottom:14px;">
+        <div style="font-size:13px;color:#6c757d;">İşlem yapmak istediğiniz maliyet kategorisini seçin</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">${cards}</div>
+    `);
+  }
+
+  private enterCategory(key: string): void {
+    const cat = COST_CATEGORIES.find(c => c.key === key);
+    if (!cat) return;
+    if (cat.status !== "ready") {
+      this.renderUnderConstruction(cat);
+      return;
+    }
+    this.currentCategory = key;
+    if (key === "ana-kumash") this.renderAnaKumashShell();
+  }
+
+  private renderUnderConstruction(cat: CostCategory): void {
+    this.currentCategory = cat.key;
+    this.$el.find("#ak-title").html(`<button id="ak-back-home" style="background:rgba(255,255,255,.15);color:white;border:none;border-radius:4px;padding:3px 9px;font-size:12px;cursor:pointer;">← Kategoriler</button> <span style="opacity:.7;">/</span> ${cat.title}`);
+    this.setContent(`
+      <div style="background:white;border:1px dashed #e0e0e0;border-radius:8px;padding:60px 20px;text-align:center;">
+        <div style="font-size:48px;margin-bottom:12px;">${cat.icon}</div>
+        <div style="font-size:16px;font-weight:700;color:#343a40;margin-bottom:6px;">${cat.title}</div>
+        <div style="font-size:13px;color:#6c757d;margin-bottom:18px;">${cat.desc}</div>
+        <div style="display:inline-block;background:#fff3e0;color:#e65100;padding:8px 18px;border-radius:20px;font-size:13px;font-weight:600;">🚧 Yapım aşamasında</div>
+        <div style="margin-top:24px;">
+          <button id="ak-back-home2" style="padding:7px 16px;background:#1D5FA3;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">← Kategori Seçimine Dön</button>
+        </div>
+      </div>
+    `);
+  }
+
+  private renderAnaKumashShell(): void {
+    const loading = '<option value="">Yükleniyor…</option>';
+    const sezOpts = this.optsHtml(this.selectorData["Sezon"]    || []);
+    const mrkOpts = this.optsHtml(this.selectorData["Marka"]    || []);
+    const katOpts = this.optsHtml(this.selectorData["Kategori"] || []);
+    const isLoading = (this.selectorData["Sezon"] || []).length === 0;
+
+    this.$el.find("#ak-title").html(`<button id="ak-back-home" style="background:rgba(255,255,255,.15);color:white;border:none;border-radius:4px;padding:3px 9px;font-size:12px;cursor:pointer;">← Kategoriler</button> <span style="opacity:.7;">/</span> Ana Kumaş Sarf`);
+
+    this.setContent(`
+      <div style="background:white;border:1px solid #e9ecef;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;box-shadow:0 1px 4px rgba(0,0,0,.08);">
+        ${this.selGroup("Sezon",    "ak-season", isLoading ? loading : sezOpts, isLoading)}
+        ${this.selGroup("Marka",    "ak-brand",  isLoading ? loading : mrkOpts, isLoading)}
+        ${this.selGroup("Kategori", "ak-cat",    isLoading ? loading : katOpts, isLoading)}
+        <button id="ak-load" ${isLoading ? "disabled" : ""} style="padding:7px 16px;background:#1D5FA3;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;${isLoading ? "opacity:.5;" : ""}">Yükle</button>
+      </div>
+      <div id="ak-main">${isLoading
+        ? this.emptyState("⏳", "PLM değer listeleri yükleniyor…")
+        : this.emptyState("🔍", "Sezon, marka ve kategori seçip <strong>Yükle</strong>'ye basın")}</div>
+    `);
+  }
+
+  private optsHtml(items: string[]): string {
+    return '<option value="">Seçiniz</option>' +
+      items.map(v => `<option value="${esc(v)}">${v}</option>`).join("");
+  }
+
+  private setContent(html: string): void { this.$el.find("#ak-content").html(html); }
 
   // Tüm selector'lar artık <select> — inner: option HTML, disabled: PLM yüklenene kadar
   private selGroup(label: string, id: string, inner: string, disabled = false): string {
@@ -574,6 +698,30 @@ class AnaKumashWidget implements IWidgetInstance {
     this.colFilters   = {};
     this.statusFilter = "";
     this.renderMatrix();
+  }
+
+  private attemptBackHome(): void {
+    if (this.dirty) {
+      this.showConfirm(
+        "Kaydedilmemiş değişiklikler var.\nKategori seçimine dönerseniz değişiklikler kaybolacak. Devam edilsin mi?",
+        () => this.goHome()
+      );
+      return;
+    }
+    this.goHome();
+  }
+
+  private goHome(): void {
+    this.dirty         = false;
+    this.season        = "";
+    this.brand         = "";
+    this.styleCategory = "";
+    this.selectedAttrs = [];
+    this.originalAttrs = [];
+    this.matrixRows    = [];
+    this.colFilters    = {};
+    this.statusFilter  = "";
+    this.renderCategoryPicker();
   }
 
   private onInput(e: JQueryEventObject): void {

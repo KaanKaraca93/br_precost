@@ -32,7 +32,7 @@ async function getAll() {
   `);
 
   const vals = await db.query(`
-    SELECT attribute_id AS "attributeId", name, code, seq
+    SELECT attribute_id AS "attributeId", value_id AS "id", name, code, seq
     FROM lookup_values
     ORDER BY seq, name
   `);
@@ -40,7 +40,7 @@ async function getAll() {
   const valMap = new Map();
   for (const v of vals.rows) {
     if (!valMap.has(v.attributeId)) valMap.set(v.attributeId, []);
-    valMap.get(v.attributeId).push({ name: v.name, code: v.code, seq: v.seq });
+    valMap.get(v.attributeId).push({ id: v.id, name: v.name, code: v.code, seq: v.seq });
   }
 
   const attributes = attrs.rows.map(a => ({
@@ -80,7 +80,16 @@ async function refresh(payload) {
     values:       normaliseValues(a.values),
   }));
 
-  const all = [...selectors, ...costAttrs];
+  const references = (payload.references || []).map((a, i) => ({
+    role:         "reference",
+    source:       a.source || "standard",
+    sourceId:     String(a.sourceId),
+    label:        a.key,
+    displayOrder: i,
+    values:       normaliseValues(a.values),
+  }));
+
+  const all = [...selectors, ...costAttrs, ...references];
 
   if (!USE_DB) {
     mem.attributes      = all;
@@ -104,8 +113,8 @@ async function refresh(payload) {
 
       for (const v of a.values) {
         await client.query(
-          `INSERT INTO lookup_values (attribute_id, name, code, seq) VALUES ($1,$2,$3,$4)`,
-          [attrId, v.name, v.code, v.seq]
+          `INSERT INTO lookup_values (attribute_id, value_id, name, code, seq) VALUES ($1,$2,$3,$4,$5)`,
+          [attrId, v.id, v.name, v.code, v.seq]
         );
       }
     }
@@ -129,8 +138,9 @@ async function refresh(payload) {
 function normaliseValues(arr) {
   return (arr || [])
     .map(v => {
-      if (typeof v === "string") return { name: v.trim(), code: null, seq: 0 };
+      if (typeof v === "string") return { id: null, name: v.trim(), code: null, seq: 0 };
       return {
+        id:   v.id !== undefined && v.id !== null ? String(v.id) : null,
         name: (v.name || "").trim(),
         code: v.code || null,
         seq:  Number(v.seq) || 0,

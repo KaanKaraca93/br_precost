@@ -63,6 +63,7 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "id":   { "type": "string", "description": "PLM GlValId (standart) veya ExtFldDropDownId (extended)" },
                             "name": { "type": "string" },
                             "code": { "type": "string" },
                             "seq":  { "type": "integer" }
@@ -100,7 +101,18 @@
                   "properties": {
                     "key":      { "type": "string", "example": "Sezon" },
                     "sourceId": { "type": "string", "example": "58" },
-                    "values":   { "type": "array", "items": { "type": "string" } }
+                    "values":   {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id":   { "type": "string" },
+                          "name": { "type": "string" },
+                          "code": { "type": "string" },
+                          "seq":  { "type": "integer" }
+                        }
+                      }
+                    }
                   }
                 }
               },
@@ -112,7 +124,42 @@
                     "key":      { "type": "string", "example": "Astar Tipi" },
                     "source":   { "type": "string", "enum": ["standard","extended"] },
                     "sourceId": { "type": "string", "example": "73" },
-                    "values":   { "type": "array", "items": { "type": "string" } }
+                    "values":   {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id":   { "type": "string" },
+                          "name": { "type": "string" },
+                          "code": { "type": "string" },
+                          "seq":  { "type": "integer" }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "references": {
+                "type": "array",
+                "description": "Sadece cache'lenir, kullanıcıya gösterilmez (örn. Kumaş Eni). Widget 2 için.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key":      { "type": "string", "example": "Kumaş Eni" },
+                    "source":   { "type": "string", "enum": ["standard","extended"] },
+                    "sourceId": { "type": "string", "example": "197" },
+                    "values":   {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id":   { "type": "string" },
+                          "name": { "type": "string" },
+                          "code": { "type": "string", "description": "Kumaş Eni için cm değeri burada gelir" },
+                          "seq":  { "type": "integer" }
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -174,6 +221,58 @@
               "items": { "$ref": "#/definitions/ComboKey" }
             }
           }
+        }
+      }
+    },
+
+    "/api/ana-kumash/lookup-bulk": {
+      "post": {
+        "operationId": "lookupAnaKumashBulk",
+        "summary": "Çoklu marka/kategori için config + values'ü tek istekte döndürür",
+        "description": "Widget 2 (Cost Missing Models) için: tek bir sezon altında birden çok marka × kategori kombinasyonu için tanımlı maliyet parametreleri ve sarf değerlerini döner.",
+        "tags": ["Ana Kumaş"],
+        "parameters": [{
+          "in": "body",
+          "name": "body",
+          "required": true,
+          "schema": {
+            "type": "object",
+            "required": ["season","brands","categories"],
+            "properties": {
+              "season":     { "type": "string", "example": "SS27" },
+              "brands":     { "type": "array", "items": { "type": "string" }, "example": ["Beymen Business","Network"] },
+              "categories": { "type": "array", "items": { "type": "string" }, "example": ["Ceket","Pantolon"] }
+            }
+          }
+        }],
+        "responses": {
+          "200": {
+            "description": "Kombinasyon başına config ve values listesi",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "season":         { "type": "string" },
+                  "brand":          { "type": "string" },
+                  "styleCategory":  { "type": "string" },
+                  "selectedAttrs":  { "type": "array", "items": { "type": "string" } },
+                  "values": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "attrCombo":   { "type": "object", "additionalProperties": { "type": "string" } },
+                        "consumption": { "type": "number" },
+                        "unit":        { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Eksik veya hatalı payload" }
         }
       }
     },

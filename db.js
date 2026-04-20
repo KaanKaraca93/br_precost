@@ -53,17 +53,22 @@ async function init() {
     CREATE TABLE IF NOT EXISTS lookup_values (
       id           SERIAL PRIMARY KEY,
       attribute_id INT          NOT NULL REFERENCES lookup_attributes(id) ON DELETE CASCADE,
+      value_id     VARCHAR(100),                -- PLM GlValId (standart) / ExtFldDropDownId (extended)
       name         VARCHAR(255) NOT NULL,
       code         VARCHAR(100),
       seq          INT          DEFAULT 0
     );
 
-    CREATE INDEX IF NOT EXISTS idx_lookup_values_attr ON lookup_values(attribute_id);
+    CREATE INDEX IF NOT EXISTS idx_lookup_values_attr     ON lookup_values(attribute_id);
+    CREATE INDEX IF NOT EXISTS idx_lookup_values_value_id ON lookup_values(value_id);
 
     CREATE TABLE IF NOT EXISTS lookup_meta (
       key   VARCHAR(50) PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    ALTER TABLE lookup_values ADD COLUMN IF NOT EXISTS value_id VARCHAR(100);
+    CREATE INDEX IF NOT EXISTS idx_lookup_values_value_id_2 ON lookup_values(value_id);
   `);
 
   console.log("[db] Tables ready");

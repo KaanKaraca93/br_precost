@@ -27,6 +27,25 @@ router.get("/list", async (req, res) => {
   }
 });
 
+// POST /api/ana-kumash/lookup-bulk
+// Bir sezon için bir kaç marka × kategori kombinasyonunun
+// hem selectedAttrs hem de values verisini tek istekte döndürür.
+// body: { season: "...", brands: ["..."], categories: ["..."] }
+router.post("/lookup-bulk", async (req, res) => {
+  const { season, brands, categories } = req.body || {};
+  if (!season || !Array.isArray(brands) || !Array.isArray(categories) ||
+      brands.length === 0 || categories.length === 0) {
+    return res.status(400).json({ error: "season, brands[], categories[] are required" });
+  }
+  try {
+    const data = await storage.lookupBulk(COST_CATEGORY, season, brands, categories);
+    res.json(data);
+  } catch (err) {
+    console.error("[lookup-bulk]", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/ana-kumash/config/:season/:brand/:styleCategory
 // Bir kombinasyon için seçili attribute'ları döner
 router.get("/config/:season/:brand/:styleCategory", async (req, res) => {

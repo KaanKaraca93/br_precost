@@ -23,6 +23,9 @@ router.post("/refresh", async (req, res) => {
     if (!Array.isArray(body.selectors) || !Array.isArray(body.costAttrs)) {
       return res.status(400).json({ error: "selectors[] and costAttrs[] are required" });
     }
+    if (body.references !== undefined && !Array.isArray(body.references)) {
+      return res.status(400).json({ error: "references must be an array if provided" });
+    }
     const out = await lookup.refresh(body);
     res.json(out);
   } catch (err) {

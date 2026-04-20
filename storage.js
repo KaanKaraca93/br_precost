@@ -118,6 +118,57 @@ async function listConfigs(costCategory) {
   return rows;
 }
 
+// Bulk: bir sezon için bir kaç marka × bir kaç kategori kombinasyonu
+// için configs ve values'ü tek seferde döndürür.
+async function lookupBulk(costCategory, season, brands, categories) {
+  if (!USE_DB) {
+    const out = [];
+    for (const b of brands) for (const c of categories) {
+      const cfg = mem.configs[memKey(costCategory, season, b, c)];
+      if (!cfg) continue;
+      const vals = mem.values[memKey(costCategory, season, b, c)] || [];
+      out.push({ season, brand: b, styleCategory: c, selectedAttrs: cfg.selectedAttrs, values: vals });
+    }
+    return out;
+  }
+
+  const db = getPool();
+  const cfgRes = await db.query(
+    `SELECT season, brand, style_category AS "styleCategory", selected_attrs AS "selectedAttrs"
+     FROM attribute_configs
+     WHERE cost_category=$1 AND season=$2 AND brand=ANY($3::text[]) AND style_category=ANY($4::text[])`,
+    [costCategory, season, brands, categories]
+  );
+  if (cfgRes.rows.length === 0) return [];
+
+  const valRes = await db.query(
+    `SELECT brand, style_category AS "styleCategory", attr_combo AS "attrCombo", consumption, unit
+     FROM consumption_values
+     WHERE cost_category=$1 AND season=$2 AND brand=ANY($3::text[]) AND style_category=ANY($4::text[])
+     ORDER BY id`,
+    [costCategory, season, brands, categories]
+  );
+
+  const valMap = new Map();
+  for (const v of valRes.rows) {
+    const k = v.brand + "::" + v.styleCategory;
+    if (!valMap.has(k)) valMap.set(k, []);
+    valMap.get(k).push({
+      attrCombo:   v.attrCombo,
+      consumption: v.consumption !== null ? parseFloat(v.consumption) : null,
+      unit:        v.unit,
+    });
+  }
+
+  return cfgRes.rows.map(c => ({
+    season:        c.season,
+    brand:         c.brand,
+    styleCategory: c.styleCategory,
+    selectedAttrs: c.selectedAttrs,
+    values:        valMap.get(c.brand + "::" + c.styleCategory) || [],
+  }));
+}
+
 async function deleteAllValues(costCategory, season, brand, styleCategory) {
   if (!USE_DB) {
     delete mem.values[memKey(costCategory, season, brand, styleCategory)];
@@ -131,4 +182,4 @@ async function deleteAllValues(costCategory, season, brand, styleCategory) {
   );
 }
 
-module.exports = { getConfig, saveConfig, getValues, bulkSaveValues, deleteAllValues, listConfigs };
+module.exports = { getConfig, saveConfig, getValues, bulkSaveValues, deleteAllValues, listConfigs, lookupBulk };
