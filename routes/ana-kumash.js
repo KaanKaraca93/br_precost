@@ -5,14 +5,14 @@ const storage = require("../storage");
 function sortedKey(arr) {
   return [...arr].sort().join("|");
 }
-const { getCostAttributes } = require("../attributes");
 
 const COST_CATEGORY = "ana-kumash";
 
 // GET /api/ana-kumash/attributes
-// Maliyet parametresi olarak kullanılabilecek attribute adları ve değerlerini döner
+// (Geriye dönük uyumluluk) Boş obje döner — gerçek attribute listesi
+// artık /api/lookup/all'dan PLM cache üzerinden geliyor.
 router.get("/attributes", (req, res) => {
-  res.json(getCostAttributes());
+  res.json({});
 });
 
 // GET /api/ana-kumash/list
@@ -68,12 +68,6 @@ router.post("/config/:season/:brand/:styleCategory", async (req, res) => {
 
   if (!Array.isArray(selectedAttrs)) {
     return res.status(400).json({ error: "selectedAttrs must be an array" });
-  }
-
-  const ATTRIBUTES = getCostAttributes();
-  const invalid = selectedAttrs.filter(a => !ATTRIBUTES[a]);
-  if (invalid.length > 0) {
-    return res.status(400).json({ error: `Unknown attributes: ${invalid.join(", ")}` });
   }
 
   try {
