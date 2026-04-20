@@ -88,6 +88,7 @@ class CostMissingWidget implements IWidgetInstance {
   private bulkConfigs: BulkConfig[] = [];
   private loading:     boolean = false;
   private toastTimer:  any = null;
+  private totalFetched: number = 0;
 
   // multi-select popover state
   private openPicker:  string | null = null;
@@ -325,6 +326,8 @@ class CostMissingWidget implements IWidgetInstance {
         this.ionGet(url,
           (styleRes: any) => {
             const styles: any[] = (styleRes && styleRes.value) ? styleRes.value : [];
+            this.totalFetched = styles.length;
+            Log.debug(`[CostMissing] STYLE returned ${styles.length} models`);
             this.results = this.processStyles(styles);
             this.loading = false;
             this.renderResults();
@@ -379,12 +382,24 @@ class CostMissingWidget implements IWidgetInstance {
     const catAttr   = this.byLabel["Kategori"];
 
     for (const s of styles) {
-      // Sadece ana kumaş quantity null/0 olanları al
-      const bom = s.StyleBOM && s.StyleBOM[0];
-      const line = bom && bom.BOMLine && bom.BOMLine[0];
-      if (!line) continue;
-      const qty = line.Quantity !== undefined && line.Quantity !== null ? parseFloat(line.Quantity) : null;
-      if (qty !== null && qty > 0) continue;
+      // Ana kumaş line'ını tüm BOM'larda ara (genellikle StyleBOM[0].BOMLine[0]).
+      // Birden fazla BOM varsa main line'ı barındıran ilk match'i al.
+      let line: any = null;
+      const boms: any[] = Array.isArray(s.StyleBOM) ? s.StyleBOM : [];
+      for (const b of boms) {
+        const lines: any[] = Array.isArray(b && b.BOMLine) ? b.BOMLine : [];
+        if (lines.length > 0) { line = lines[0]; break; }
+      }
+
+      const qty = (line && line.Quantity !== undefined && line.Quantity !== null)
+        ? parseFloat(line.Quantity)
+        : null;
+
+      // Modeli listeye dahil etme kuralı:
+      //   - Main BOMLine YOK → ana kumaş tanımı yok, listele (kullanıcı görmek ister)
+      //   - Main BOMLine var ama qty 0/null → eksik, listele
+      //   - Main BOMLine var ve qty > 0 → tam, gösterme
+      if (line && qty !== null && qty > 0) continue;
 
       const brandName = brandAttr ? this.nameOf(brandAttr, String(s.BrandId)) : String(s.BrandId);
       const catName   = catAttr   ? this.nameOf(catAttr,   String(s.CategoryId)) : String(s.CategoryId);
@@ -445,8 +460,8 @@ class CostMissingWidget implements IWidgetInstance {
         }
       }
 
-      // Kumaş eni
-      const widthCm = this.resolveFabricWidth(line.UserDefinedField12);
+      // Kumaş eni — line yoksa null
+      const widthCm = line ? this.resolveFabricWidth(line.UserDefinedField12) : null;
       const adjusted = (baseSuggestion !== null && widthCm !== null)
         ? this.adjustForWidth(baseSuggestion, widthCm)
         : baseSuggestion;
@@ -459,7 +474,7 @@ class CostMissingWidget implements IWidgetInstance {
         category:      catName,
         bomLine:       line,
         currentQty:    qty,
-        fabricCode:    line.Code || "",
+        fabricCode:    line ? (line.Code || "") : "",
         fabricWidthCm: widthCm,
         combo:         combo,
         comboReadable: Object.keys(combo).length === 0 ? "—" : Object.entries(combo).map(([k, v]) => `${k}: ${v}`).join(", "),
@@ -508,7 +523,10 @@ class CostMissingWidget implements IWidgetInstance {
 
   private renderResults(): void {
     if (this.results.length === 0) {
-      this.setMain(this.emptyState("✅", "Seçili kriterlere uygun, ana kumaş sarfı eksik model bulunamadı"));
+      const msg = this.totalFetched === 0
+        ? "PLM'den seçili kriterlere uygun model dönmedi (filtre/yetki kontrolü)"
+        : `PLM ${this.totalFetched} model döndürdü, hepsinde ana kumaş sarfı tanımlı (qty > 0). Eksik model yok.`;
+      this.setMain(this.emptyState("✅", msg));
       return;
     }
 
@@ -555,7 +573,7 @@ class CostMissingWidget implements IWidgetInstance {
     this.setMain(`
       <div style="background:white;border:1px solid #e9ecef;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
         <div style="padding:10px 16px;border-bottom:1px solid #e9ecef;display:flex;align-items:center;flex-wrap:wrap;gap:8px;">
-          <span style="font-weight:700;">Sonuçlar (${this.results.length})</span>
+          <span style="font-weight:700;">Sonuçlar (${this.results.length} / ${this.totalFetched} model)</span>
           <span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">${matchCounts.match} eşleşti</span>
           <span style="background:#fff3e0;color:#e65100;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">${matchCounts.partial} kısmi</span>
           <span style="background:#ffebee;color:#c62828;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">${matchCounts.noConfig} parametresiz</span>
