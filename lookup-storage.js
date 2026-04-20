@@ -121,18 +121,43 @@ async function refresh(payload) {
     await client.query("BEGIN");
     await client.query("TRUNCATE lookup_values, lookup_attributes RESTART IDENTITY CASCADE");
 
-    for (const a of all) {
+    if (all.length > 0) {
+      const aParams = [];
+      const aTuples = [];
+      let p = 1;
+      for (const a of all) {
+        aTuples.push(`($${p++},$${p++},$${p++},$${p++},$${p++})`);
+        aParams.push(a.role, a.source, a.sourceId, a.label, a.displayOrder);
+      }
       const ins = await client.query(
         `INSERT INTO lookup_attributes (role, source, source_id, label, display_order)
-         VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-        [a.role, a.source, a.sourceId, a.label, a.displayOrder]
+         VALUES ${aTuples.join(",")} RETURNING id`,
+        aParams
       );
-      const attrId = ins.rows[0].id;
+      const ids = ins.rows.map(r => r.id);
 
-      for (const v of a.values) {
+      const flatRows = [];
+      for (let i = 0; i < all.length; i++) {
+        const attrId = ids[i];
+        for (const v of all[i].values) {
+          flatRows.push([attrId, v.id, v.name, v.code, v.seq]);
+        }
+      }
+
+      // pg parametre limiti 65535. 1000 satır × 5 param = 5000.
+      const ROWS_PER_BATCH = 1000;
+      for (let off = 0; off < flatRows.length; off += ROWS_PER_BATCH) {
+        const slice = flatRows.slice(off, off + ROWS_PER_BATCH);
+        const sliceParams = [];
+        const sliceTuples = [];
+        let np = 1;
+        for (const row of slice) {
+          sliceTuples.push(`($${np++},$${np++},$${np++},$${np++},$${np++})`);
+          sliceParams.push(row[0], row[1], row[2], row[3], row[4]);
+        }
         await client.query(
-          `INSERT INTO lookup_values (attribute_id, value_id, name, code, seq) VALUES ($1,$2,$3,$4,$5)`,
-          [attrId, v.id, v.name, v.code, v.seq]
+          `INSERT INTO lookup_values (attribute_id, value_id, name, code, seq) VALUES ${sliceTuples.join(",")}`,
+          sliceParams
         );
       }
     }
