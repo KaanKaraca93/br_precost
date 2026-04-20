@@ -35,6 +35,107 @@
       }
     },
 
+    "/api/lookup/all": {
+      "get": {
+        "operationId": "getLookupAll",
+        "summary": "Cache'lenmiş selector ve cost-attribute değer listelerini döner",
+        "description": "Heroku DB'sindeki tüm lookup verisini döner. `stale=true` ise widget arka planda PLM'den yeniler.",
+        "tags": ["Lookup"],
+        "responses": {
+          "200": {
+            "description": "Lookup verisi",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "lastRefreshedAt": { "type": "string", "format": "date-time" },
+                "stale":           { "type": "boolean" },
+                "attributes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "role":     { "type": "string", "enum": ["selector","cost-attr"] },
+                      "source":   { "type": "string", "enum": ["standard","extended"] },
+                      "sourceId": { "type": "string" },
+                      "label":    { "type": "string" },
+                      "values": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": { "type": "string" },
+                            "code": { "type": "string" },
+                            "seq":  { "type": "integer" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/lookup/refresh": {
+      "post": {
+        "operationId": "refreshLookup",
+        "summary": "Lookup cache'ini güncel veriyle yeniden yükler",
+        "description": "Widget tarafı PLM'den çektiği selector ve cost-attr değerlerini bu endpoint'e gönderir; tüm lookup tabloları truncate edilip yeniden yazılır.",
+        "tags": ["Lookup"],
+        "parameters": [{
+          "in": "body",
+          "name": "body",
+          "required": true,
+          "schema": {
+            "type": "object",
+            "required": ["selectors","costAttrs"],
+            "properties": {
+              "selectors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key":      { "type": "string", "example": "Sezon" },
+                    "sourceId": { "type": "string", "example": "58" },
+                    "values":   { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              },
+              "costAttrs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key":      { "type": "string", "example": "Astar Tipi" },
+                    "source":   { "type": "string", "enum": ["standard","extended"] },
+                    "sourceId": { "type": "string", "example": "73" },
+                    "values":   { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            }
+          }
+        }],
+        "responses": {
+          "200": {
+            "description": "Yenileme başarılı",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ok":              { "type": "boolean" },
+                "lastRefreshedAt": { "type": "string", "format": "date-time" },
+                "count":           { "type": "integer" }
+              }
+            }
+          },
+          "400": { "description": "Eksik veya hatalı payload" }
+        }
+      }
+    },
+
     "/api/ana-kumash/attributes": {
       "get": {
         "operationId": "getAnaKumashAttributes",
