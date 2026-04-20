@@ -54,7 +54,25 @@ async function getAll() {
   const meta = await db.query(`SELECT value FROM lookup_meta WHERE key = 'last_refreshed_at'`);
   const lastRefreshedAt = meta.rows[0] ? meta.rows[0].value : null;
 
-  return { attributes, lastRefreshedAt, stale: isStale(lastRefreshedAt) };
+  // Schema/data-eksiği kontrolü: cost-attr veya selector altındaki herhangi
+  // bir değerde value_id NULL ise eski schema'dan kalmıştır → stale say,
+  // widget bir sonraki açılışta arka planda yeni şemayla yenilesin.
+  const idMissing = await db.query(`
+    SELECT 1
+    FROM lookup_values v
+    JOIN lookup_attributes a ON a.id = v.attribute_id
+    WHERE v.value_id IS NULL
+      AND a.role IN ('selector','cost-attr','reference')
+    LIMIT 1
+  `);
+  const schemaStale = idMissing.rows.length > 0;
+
+  return {
+    attributes,
+    lastRefreshedAt,
+    stale: schemaStale || isStale(lastRefreshedAt),
+    schemaStale,
+  };
 }
 
 // payload: { selectors: [{ key, sourceId, values: [...] }, ...],
