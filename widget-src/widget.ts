@@ -61,9 +61,7 @@ const COST_CATEGORIES: CostCategory[] = [
     endpointBase: "/api/cost-params/iscilik",
     zeroAttrsRowLabel: "Bu marka × kategori için sabit işçilik",
   },
-  { key: "astar-garni",  icon: "🧶", title: "Astar ve Garni Sarf",  desc: "Astar ve garni malzeme sarf değerleri", status: "wip", unit: "m",  unitLabel: "Sarf (m)",  hint: "", allowZeroAttrs: false, endpointBase: "/api/cost-params/astar-garni"  },
   { key: "uretim-paket", icon: "📦", title: "Üretim & Paketleme",   desc: "Üretim ve paketleme maliyetleri",       status: "wip", unit: "TL", unitLabel: "Tutar (TL)", hint: "", allowZeroAttrs: true,  endpointBase: "/api/cost-params/uretim-paket" },
-  { key: "malzeme",      icon: "🔩", title: "Malzeme",              desc: "Aksesuar ve diğer malzeme maliyetleri", status: "wip", unit: "TL", unitLabel: "Tutar (TL)", hint: "", allowZeroAttrs: false, endpointBase: "/api/cost-params/malzeme"      },
 ];
 
 function getCategory(key: string | null): CostCategory | null {
