@@ -80,6 +80,16 @@ const PATCH_QUANTITY_UOM_ID    = "9";    // mt
 const PATCH_CURRENCY_ID        = 4;
 const PATCH_SCHEMA             = "FSH1";
 
+// İşçilik (BOO save) sabitleri
+const ISCILIK_BASE_DIVISOR     = 53.26;  // PricePerPiece = cost / 53.26
+const ISCILIK_BOO_VERSION_NAME = "precost";
+const ISCILIK_OPERATION_NAME   = "Urün Hedef Fason Maliyeti";
+const ISCILIK_OPERATION_CODE   = "1000";
+const ISCILIK_SAM              = 60;
+const ISCILIK_COST_CURRENCY_ID = 4;
+const ISCILIK_BASE_CURRENCY_ID = 3;
+const ISCILIK_HOURLY_CURRENCY_ID = 4;
+
 // Costing save için sabit settings (PLM örnek payload'undan birebir alındı)
 const COSTING_SAVE_SETTINGS = {
   key: "bomdetails",
@@ -495,8 +505,8 @@ class CostMissingWidget implements IWidgetInstance {
   private isApplicable(r: ResultRow): boolean {
     const cat = getCategory(this.currentCategory);
     if (cat && cat.key === "iscilik") {
-      // İşçilik patch akışı şu an WIP — listeleme aktif, uygulama kapalı
-      return false;
+      // İşçilik: BOO yarat + STYLEBOM güncelle + costing save → styleBomId ve baseSuggestion lazım
+      return r.baseSuggestion !== null && r.styleBomId !== null;
     }
     return r.adjustedSuggestion !== null
         && r.bomLineId !== null
@@ -505,7 +515,11 @@ class CostMissingWidget implements IWidgetInstance {
 
   private applicableReason(r: ResultRow): string {
     const cat = getCategory(this.currentCategory);
-    if (cat && cat.key === "iscilik") return "İşçilik patch akışı henüz aktif değil";
+    if (cat && cat.key === "iscilik") {
+      if (r.baseSuggestion === null) return "Tutar parametre tablosunda yok";
+      if (r.styleBomId === null)     return "StyleBOM yok";
+      return "";
+    }
     if (r.adjustedSuggestion === null) return "Önerilen sarf hesaplanamadı";
     if (r.bomLineId === null)          return "Ana kumaş BOMLine yok";
     if (r.styleBomId === null)         return "StyleBOM yok";
@@ -1017,28 +1031,160 @@ class CostMissingWidget implements IWidgetInstance {
     if (!r || !this.isApplicable(r)) return false;
     if (r.patchStatus === "running" || r.patchStatus === "done") return r.patchStatus === "done";
 
+    const cat = getCategory(this.currentCategory);
+    const isIscilik = !!cat && cat.key === "iscilik";
+
     r.patchStatus = "running";
     r.patchMsg    = "";
     if (!fromBulk) this.renderResults();
 
     try {
-      // 1) STYLEBOM setup
-      const styleBomBody: any = {
-        Id:               r.styleBomId,
-        ExchangeRateType: PATCH_EXCHANGE_RATE_TYPE,
-        ExchangeRateDate: PATCH_EXCHANGE_RATE_DATE,
-      };
-      if (r.booId !== null) styleBomBody.BOOVersion = r.booId;
-      await this.ionRequest("PATCH", `${PLM_BASE}/STYLEBOM`, [styleBomBody]);
+      let writtenLabel = "";
 
-      // 2) BOMLINE quantity
-      const qtyStr = r.adjustedSuggestion!.toFixed(3);
-      await this.ionRequest("PATCH", `${PLM_BASE}/BOMLINE(${r.bomLineId})`, {
-        QuantityUOMId: PATCH_QUANTITY_UOM_ID,
-        Quantity:      qtyStr,
-      });
+      if (isIscilik) {
+        // ──── İşçilik akışı ────────────────────────────────────────────────
+        // 1) BOO save → yeni BOO version + OperationId=1723 ekle
+        const cost  = r.baseSuggestion!;                  // TL (parametreden)
+        const base  = Math.round((cost / ISCILIK_BASE_DIVISOR) * 1000) / 1000;
+        const costStr = cost.toFixed(3);
+        const baseStr = base.toFixed(3);
+        const tempId  = this.makeTempId();
 
-      // 3) Costing rowVersionText oku
+        const operationFields = [
+          { FieldName: "PlacementId",          Value: null     },
+          { FieldName: "SubSequence",          Value: 10       },
+          { FieldName: "Sequence",             Value: 10       },
+          { FieldName: "OperationId",          Value: ISCILIK_OPERATION_ID },
+          { FieldName: "IsSelected",           Value: true     },
+          { FieldName: "ManMachineId",         Value: null     },
+          { FieldName: "Number",               Value: 1        },
+          { FieldName: "parent",               Value: "StyleBol" },
+          { FieldName: "name",                 Value: "StyleBOLOperation" },
+          { FieldName: "Name",                 Value: ISCILIK_OPERATION_NAME },
+          { FieldName: "Code",                 Value: ISCILIK_OPERATION_CODE },
+          { FieldName: "Cost",                 Value: costStr  },
+          { FieldName: "Base",                 Value: baseStr  },
+          { FieldName: "HourlyRate",           Value: costStr  },
+          { FieldName: "Status",               Value: 1        },
+          { FieldName: "OperationGroupId",     Value: null     },
+          { FieldName: "UserDefinedField1",    Value: null     },
+          { FieldName: "CostCurrencyId",       Value: ISCILIK_COST_CURRENCY_ID },
+          { FieldName: "OperationTypeId",      Value: null     },
+          { FieldName: "Description",          Value: ""       },
+          { FieldName: "SkillsId",             Value: null     },
+          { FieldName: "BaseCurrencyId",       Value: ISCILIK_BASE_CURRENCY_ID },
+          { FieldName: "HourlyRateCurrencyId", Value: ISCILIK_HOURLY_CURRENCY_ID },
+          { FieldName: "Sam",                  Value: ISCILIK_SAM },
+        ];
+
+        const operationInline: any = {
+          PlacementId: null, SubSequence: 10, Sequence: 10,
+          OperationId: ISCILIK_OPERATION_ID, IsSelected: true,
+          ManMachineId: null, Number: 1,
+          parent: "StyleBol", name: "StyleBOLOperation",
+          Name: ISCILIK_OPERATION_NAME, Code: ISCILIK_OPERATION_CODE,
+          Cost: costStr, Base: baseStr, HourlyRate: costStr,
+          Status: 1, OperationGroupId: null, UserDefinedField1: null,
+          CostCurrencyId: ISCILIK_COST_CURRENCY_ID,
+          Id: tempId, OperationTypeId: null, Description: "",
+          SkillsId: null,
+          BaseCurrencyId: ISCILIK_BASE_CURRENCY_ID,
+          HourlyRateCurrencyId: ISCILIK_HOURLY_CURRENCY_ID,
+          Sam: ISCILIK_SAM,
+        };
+
+        const booBody = {
+          StyleId:    r.styleId,
+          ModifyId:   String(PATCH_USER_ID),
+          UserId:     PATCH_USER_ID,
+          ModuleName: r.name || "",
+          ModuleCode: r.styleCode || "",
+          StyleBOOs: [{
+            StyleBOOId: 0,
+            Key:        0,
+            VersionName: ISCILIK_BOO_VERSION_NAME,
+            DeletedOperations: [],
+            DeletedImages: [],
+            RowVersionText: "",
+            FieldValues: [
+              { FieldName: "IsMain",          Value: true },
+              { FieldName: "SamTotal",        Value: 0 },
+              { FieldName: "RowVersionText",  Value: "" },
+              { FieldName: "Quantity",        Value: 1 },
+              { FieldName: "Name",            Value: ISCILIK_BOO_VERSION_NAME },
+              { FieldName: "CurrencyId",      Value: 0 },
+              { FieldName: "StyleId",         Value: r.styleId },
+              { FieldName: "StatusId",        Value: 1 },
+              { FieldName: "StyleBolBomVer",  Value: String(r.styleBomId) },
+              { FieldName: "BomVersionId",    Value: r.styleBomId },
+              { FieldName: "StyleBOLOperation", Value: [operationInline] },
+              { FieldName: "PricePerPiece",   Value: baseStr },
+              { FieldName: "StyleName",       Value: r.name || "" },
+              { FieldName: "ModifyId",        Value: PATCH_USER_ID },
+            ],
+            SubEntities: [{
+              Key:       0,
+              TempKey:   tempId,
+              SubEntity: "StyleBOLOperation",
+              FieldValues: operationFields,
+            }],
+          }],
+          deletedVerIds: [],
+          Schema: PATCH_SCHEMA,
+        };
+
+        const booRes = await this.ionRequest(
+          "POST",
+          `${PLM_PDM_BASE}/style/boo/v2/save`,
+          booBody,
+          {
+            "Content-Type": "application/json-patch+json",
+            "accept":       "text/plain",
+            "x-fplm-client-version": PLM_CLIENT_VERSION,
+          }
+        );
+
+        const newBooId = this.extractNewBooId(booRes);
+        if (!newBooId) {
+          const reason = this.extractBooError(booRes) || "BOO Id okunamadı";
+          throw new Error(reason);
+        }
+
+        // 2) STYLEBOM setup → yeni BOOVersion
+        await this.ionRequest("PATCH", `${PLM_BASE}/STYLEBOM`, [{
+          Id:               r.styleBomId,
+          ExchangeRateType: PATCH_EXCHANGE_RATE_TYPE,
+          ExchangeRateDate: PATCH_EXCHANGE_RATE_DATE,
+          BOOVersion:       newBooId,
+        }]);
+
+        r.booId      = newBooId;
+        r.currentQty = cost;
+        writtenLabel = `${costStr} TL yazıldı`;
+
+      } else {
+        // ──── Ana kumaş akışı (mevcut) ─────────────────────────────────────
+        // 1) STYLEBOM setup
+        const styleBomBody: any = {
+          Id:               r.styleBomId,
+          ExchangeRateType: PATCH_EXCHANGE_RATE_TYPE,
+          ExchangeRateDate: PATCH_EXCHANGE_RATE_DATE,
+        };
+        if (r.booId !== null) styleBomBody.BOOVersion = r.booId;
+        await this.ionRequest("PATCH", `${PLM_BASE}/STYLEBOM`, [styleBomBody]);
+
+        // 2) BOMLINE quantity
+        const qtyStr = r.adjustedSuggestion!.toFixed(3);
+        await this.ionRequest("PATCH", `${PLM_BASE}/BOMLINE(${r.bomLineId})`, {
+          QuantityUOMId: PATCH_QUANTITY_UOM_ID,
+          Quantity:      qtyStr,
+        });
+
+        r.currentQty = parseFloat(qtyStr);
+        writtenLabel = `${qtyStr} m yazıldı`;
+      }
+
+      // 3) Costing rowVersionText oku (her iki akışta ortak)
       const viewRes = await this.ionRequest("POST", `${PLM_VIEW_BASE}/layout/data/get`, {
         roleId: 1,
         userId: PATCH_USER_ID,
@@ -1059,7 +1205,7 @@ class CostMissingWidget implements IWidgetInstance {
       const rowVersionText = this.extractRowVersionText(viewRes);
       if (!rowVersionText) throw new Error("RowVersionText okunamadı");
 
-      // 4) Costing save
+      // 4) Costing save (her iki akışta ortak)
       await this.ionRequest("POST", `${PLM_PDM_BASE}/style/costing/save`, {
         key:            String(r.styleId),
         fieldValues:    [{ fieldName: "CurrencyId", value: PATCH_CURRENCY_ID }],
@@ -1075,8 +1221,7 @@ class CostMissingWidget implements IWidgetInstance {
       });
 
       r.patchStatus = "done";
-      r.patchMsg    = `${qtyStr} m yazıldı`;
-      r.currentQty  = parseFloat(qtyStr);
+      r.patchMsg    = writtenLabel;
       r.selected    = false;
       if (!fromBulk) {
         this.renderResults();
@@ -1093,6 +1238,40 @@ class CostMissingWidget implements IWidgetInstance {
       }
       return false;
     }
+  }
+
+  private makeTempId(): string {
+    // PLM örneğinde TempId formatı: btoa(timestampMs) + "0"
+    const ts = String(Date.now() + Math.floor(Math.random() * 1000));
+    let b64: string;
+    try {
+      b64 = (typeof btoa === "function") ? btoa(ts) : Buffer.from(ts).toString("base64");
+    } catch (_e) {
+      b64 = ts;
+    }
+    return b64 + "0";
+  }
+
+  private extractNewBooId(res: any): number | null {
+    if (!res) return null;
+    const arr = res.styleBOODto || res.StyleBOODto;
+    if (Array.isArray(arr) && arr.length > 0) {
+      const id = arr[0].id !== undefined ? arr[0].id : arr[0].Id;
+      if (id !== undefined && id !== null) {
+        const n = Number(id);
+        return isNaN(n) ? null : n;
+      }
+    }
+    return null;
+  }
+
+  private extractBooError(res: any): string | null {
+    if (!res) return null;
+    if (res.exception) return String(res.exception);
+    if (res.brokenRules) {
+      try { return JSON.stringify(res.brokenRules); } catch (_e) { return String(res.brokenRules); }
+    }
+    return null;
   }
 
   private async applyBulk(): Promise<void> {
