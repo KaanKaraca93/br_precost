@@ -10,8 +10,9 @@ app.use(express.json({ limit: "25mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
-app.use("/api/ana-kumash", require("./routes/ana-kumash"));
-app.use("/api/lookup",     require("./routes/lookup"));
+app.use("/api/ana-kumash",   require("./routes/ana-kumash"));
+app.use("/api/lookup",       require("./routes/lookup"));
+app.use("/api/cost-params",  require("./routes/cost-params"));
 
 app.get("/api/health", (_req, res) =>
   res.json({ status: "ok", timestamp: new Date().toISOString() })

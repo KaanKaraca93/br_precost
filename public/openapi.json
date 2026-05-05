@@ -406,6 +406,99 @@
           }
         }
       }
+    },
+
+    "/api/cost-params/{costCategory}/list": {
+      "get": {
+        "operationId": "listCostParamsConfigs",
+        "summary": "Bir maliyet kategorisi için kayıtlı tüm sezon/marka/kategori kombinasyonlarını listeler",
+        "tags": ["Cost Params (generic)"],
+        "parameters": [{ "in": "path", "name": "costCategory", "required": true, "type": "string", "enum": ["ana-kumash","astar-garni","iscilik","uretim-paket","malzeme"] }],
+        "responses": { "200": { "description": "Kombinasyon listesi", "schema": { "type": "array", "items": { "$ref": "#/definitions/ComboKey" } } } }
+      }
+    },
+
+    "/api/cost-params/{costCategory}/lookup-bulk": {
+      "post": {
+        "operationId": "lookupCostParamsBulk",
+        "summary": "Bir maliyet kategorisi için çoklu marka × kategori bulk lookup",
+        "tags": ["Cost Params (generic)"],
+        "parameters": [
+          { "in": "path", "name": "costCategory", "required": true, "type": "string" },
+          { "in": "body", "name": "body", "required": true, "schema": {
+            "type": "object", "required": ["season","brands","categories"],
+            "properties": {
+              "season":     { "type": "string" },
+              "brands":     { "type": "array", "items": { "type": "string" } },
+              "categories": { "type": "array", "items": { "type": "string" } }
+            }
+          } }
+        ],
+        "responses": { "200": { "description": "Combo başına config + values" } }
+      }
+    },
+
+    "/api/cost-params/{costCategory}/config/{season}/{brand}/{styleCategory}": {
+      "get": {
+        "operationId": "getCostParamsConfig",
+        "summary": "Bir kombinasyon için seçili maliyet parametrelerini döner",
+        "tags": ["Cost Params (generic)"],
+        "parameters": [
+          { "in": "path", "name": "costCategory",   "required": true, "type": "string" },
+          { "in": "path", "name": "season",          "required": true, "type": "string" },
+          { "in": "path", "name": "brand",           "required": true, "type": "string" },
+          { "in": "path", "name": "styleCategory",   "required": true, "type": "string" }
+        ],
+        "responses": { "200": { "description": "Seçili attribute listesi", "schema": { "type": "object", "properties": { "selectedAttrs": { "type": "array", "items": { "type": "string" } } } } } }
+      },
+      "post": {
+        "operationId": "saveCostParamsConfig",
+        "summary": "Bir kombinasyon için maliyet parametrelerini kaydeder",
+        "description": "selectedAttrs boş array olabilir (örn. işçilikte parametre olmadan tek değer girilir). Liste değiştiyse o kombinasyonun değerleri silinir.",
+        "tags": ["Cost Params (generic)"],
+        "parameters": [
+          { "in": "path", "name": "costCategory",   "required": true, "type": "string" },
+          { "in": "path", "name": "season",          "required": true, "type": "string" },
+          { "in": "path", "name": "brand",           "required": true, "type": "string" },
+          { "in": "path", "name": "styleCategory",   "required": true, "type": "string" },
+          { "in": "body", "name": "body", "required": true, "schema": {
+            "type": "object", "required": ["selectedAttrs"],
+            "properties": { "selectedAttrs": { "type": "array", "items": { "type": "string" } } }
+          } }
+        ],
+        "responses": { "200": { "description": "Kayıt başarılı" } }
+      }
+    },
+
+    "/api/cost-params/{costCategory}/values/{season}/{brand}/{styleCategory}": {
+      "get": {
+        "operationId": "getCostParamsValues",
+        "summary": "Bir kombinasyon için kayıtlı değerleri döner",
+        "tags": ["Cost Params (generic)"],
+        "parameters": [
+          { "in": "path", "name": "costCategory",   "required": true, "type": "string" },
+          { "in": "path", "name": "season",          "required": true, "type": "string" },
+          { "in": "path", "name": "brand",           "required": true, "type": "string" },
+          { "in": "path", "name": "styleCategory",   "required": true, "type": "string" }
+        ],
+        "responses": { "200": { "description": "Değer listesi", "schema": { "type": "array", "items": { "$ref": "#/definitions/ConsumptionValue" } } } }
+      },
+      "post": {
+        "operationId": "saveCostParamsValues",
+        "summary": "Bir kombinasyon için değerleri toplu upsert eder",
+        "tags": ["Cost Params (generic)"],
+        "parameters": [
+          { "in": "path", "name": "costCategory",   "required": true, "type": "string" },
+          { "in": "path", "name": "season",          "required": true, "type": "string" },
+          { "in": "path", "name": "brand",           "required": true, "type": "string" },
+          { "in": "path", "name": "styleCategory",   "required": true, "type": "string" },
+          { "in": "body", "name": "body", "required": true, "schema": {
+            "type": "object", "required": ["values"],
+            "properties": { "values": { "type": "array", "items": { "$ref": "#/definitions/ConsumptionValueInput" } } }
+          } }
+        ],
+        "responses": { "200": { "description": "Kayıt başarılı" } }
+      }
     }
 
   },

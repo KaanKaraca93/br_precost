@@ -29,21 +29,47 @@ const REFERENCE_MAP: { [id: number]: string } = {
   197: "Kumaş Eni",   // BomLine.UserDefinedField12 → cm değeri (Code alanından okunur)
 };
 
-// Maliyet kategorileri — şimdilik sadece "ana-kumash" tam implementasyonlu
+// Maliyet kategorileri — şimdilik "ana-kumash" ve "iscilik" implementasyonlu
 interface CostCategory {
   key:    string;
   icon:   string;
   title:  string;
   desc:   string;
   status: "ready" | "wip";
+  unit:   string;                 // tablo ve hint için: "m" / "TL"
+  unitLabel: string;              // kolon başlığı: "Sarf (m)" / "Tutar (TL)"
+  hint:   string;                 // mavi info banner metni
+  allowZeroAttrs: boolean;        // true ise parametre seçmeden tek değer girilebilir
+  endpointBase: string;           // "/api/ana-kumash" veya "/api/cost-params/<key>"
+  zeroAttrsRowLabel?: string;     // 0 attr modunda tek satırın açıklama metni
 }
 const COST_CATEGORIES: CostCategory[] = [
-  { key: "ana-kumash",      icon: "🧵", title: "Ana Kumaş Sarf",       desc: "Sezon/marka/kategori bazlı ana kumaş sarf parametreleri", status: "ready" },
-  { key: "astar-garni",     icon: "🧶", title: "Astar ve Garni Sarf",  desc: "Astar ve garni malzeme sarf değerleri",                  status: "wip"   },
-  { key: "iscilik",         icon: "👷", title: "İşçilik",              desc: "İşçilik maliyet bileşenleri",                            status: "wip"   },
-  { key: "uretim-paket",    icon: "📦", title: "Üretim & Paketleme",   desc: "Üretim ve paketleme maliyetleri",                        status: "wip"   },
-  { key: "malzeme",         icon: "🔩", title: "Malzeme",              desc: "Aksesuar ve diğer malzeme maliyetleri",                  status: "wip"   },
+  {
+    key: "ana-kumash", icon: "🧵", title: "Ana Kumaş Sarf",
+    desc: "Sezon/marka/kategori bazlı ana kumaş sarf parametreleri",
+    status: "ready", unit: "m", unitLabel: "Sarf (m)",
+    hint: "ℹ️ Değerler <strong>150 cm kumaş eni</strong> baz alınarak girilmelidir",
+    allowZeroAttrs: false,
+    endpointBase: "/api/ana-kumash",
+  },
+  {
+    key: "iscilik", icon: "👷", title: "İşçilik",
+    desc: "İşçilik maliyet bileşenleri (parametre seçimi opsiyonel)",
+    status: "ready", unit: "TL", unitLabel: "Tutar (TL)",
+    hint: "ℹ️ Tutarlar <strong>TL</strong> cinsindendir. Parametre seçmeden de doğrudan kategoriye fiyat girebilirsiniz.",
+    allowZeroAttrs: true,
+    endpointBase: "/api/cost-params/iscilik",
+    zeroAttrsRowLabel: "Bu marka × kategori için sabit işçilik",
+  },
+  { key: "astar-garni",  icon: "🧶", title: "Astar ve Garni Sarf",  desc: "Astar ve garni malzeme sarf değerleri", status: "wip", unit: "m",  unitLabel: "Sarf (m)",  hint: "", allowZeroAttrs: false, endpointBase: "/api/cost-params/astar-garni"  },
+  { key: "uretim-paket", icon: "📦", title: "Üretim & Paketleme",   desc: "Üretim ve paketleme maliyetleri",       status: "wip", unit: "TL", unitLabel: "Tutar (TL)", hint: "", allowZeroAttrs: true,  endpointBase: "/api/cost-params/uretim-paket" },
+  { key: "malzeme",      icon: "🔩", title: "Malzeme",              desc: "Aksesuar ve diğer malzeme maliyetleri", status: "wip", unit: "TL", unitLabel: "Tutar (TL)", hint: "", allowZeroAttrs: false, endpointBase: "/api/cost-params/malzeme"      },
 ];
+
+function getCategory(key: string | null): CostCategory | null {
+  if (!key) return null;
+  return COST_CATEGORIES.find(c => c.key === key) || null;
+}
 
 interface AttributeMap     { [name: string]: string[] }
 interface AttrCombo        { [name: string]: string }
@@ -126,7 +152,8 @@ class AnaKumashWidget implements IWidgetInstance {
     this.$el.find("#ak-cache-info").text(hint);
 
     // Selector'lar sadece Ana Kumaş ekranındayken DOM'da var
-    if (this.currentCategory !== "ana-kumash") return;
+    const cat = getCategory(this.currentCategory);
+    if (!cat || cat.status !== "ready") return;
     if (this.$el.find("#ak-season").length === 0) return;
 
     const mkOpts = (items: string[]) =>
@@ -365,7 +392,7 @@ class AnaKumashWidget implements IWidgetInstance {
       return;
     }
     this.currentCategory = key;
-    if (key === "ana-kumash") this.renderAnaKumashShell();
+    this.renderCategoryShell(cat);
   }
 
   private renderUnderConstruction(cat: CostCategory): void {
@@ -384,14 +411,20 @@ class AnaKumashWidget implements IWidgetInstance {
     `);
   }
 
+  // Geriye dönük uyumluluk için bırakıldı
   private renderAnaKumashShell(): void {
+    const cat = getCategory("ana-kumash");
+    if (cat) this.renderCategoryShell(cat);
+  }
+
+  private renderCategoryShell(cat: CostCategory): void {
     const loading = '<option value="">Yükleniyor…</option>';
     const sezOpts = this.optsHtml(this.selectorData["Sezon"]    || []);
     const mrkOpts = this.optsHtml(this.selectorData["Marka"]    || []);
     const katOpts = this.optsHtml(this.selectorData["Kategori"] || []);
     const isLoading = (this.selectorData["Sezon"] || []).length === 0;
 
-    this.$el.find("#ak-title").html(`<button id="ak-back-home" style="background:rgba(255,255,255,.15);color:white;border:none;border-radius:4px;padding:3px 9px;font-size:12px;cursor:pointer;">← Kategoriler</button> <span style="opacity:.7;">/</span> Ana Kumaş Sarf`);
+    this.$el.find("#ak-title").html(`<button id="ak-back-home" style="background:rgba(255,255,255,.15);color:white;border:none;border-radius:4px;padding:3px 9px;font-size:12px;cursor:pointer;">← Kategoriler</button> <span style="opacity:.7;">/</span> ${cat.icon} ${cat.title}`);
 
     this.setContent(`
       <div style="background:white;border:1px solid #e9ecef;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;box-shadow:0 1px 4px rgba(0,0,0,.08);">
@@ -458,11 +491,23 @@ class AnaKumashWidget implements IWidgetInstance {
       this.originalAttrs = [...this.selectedAttrs];
 
       this.apiGet(valPath, (vals: ConsumptionValue[]) => {
+        // Önce attribute seçim ekranını göster — kullanıcı ekleme/değiştirme yapabilsin.
+        // Daha önce kayıtlı attribute set'i varsa (veya allowZeroAttrs ile boş seçim onaylanmışsa)
+        // direkt matrix'e atlayıp orada yarat. Şimdilik akışı bozmamak için:
+        //  - Daha önce kaydedilmiş attribute varsa (>=1) → matrix
+        //  - Yoksa → her zaman attribute seçim ekranı (0 attr da burada onaylanır)
         if (this.selectedAttrs.length > 0) {
           this.buildMatrixRows(vals);
           this.renderMatrix();
         } else {
-          this.renderAttrSelect();
+          // Daha önce 0 attr ile kaydedilmiş değer varsa direkt matrix moduna geç
+          const cat = getCategory(this.currentCategory);
+          if (cat && cat.allowZeroAttrs && vals && vals.length > 0) {
+            this.buildMatrixRows(vals);
+            this.renderMatrix();
+          } else {
+            this.renderAttrSelect();
+          }
         }
       }, (err: any) => Log.error("[PreCost] Values: " + JSON.stringify(err)));
 
@@ -490,17 +535,25 @@ class AnaKumashWidget implements IWidgetInstance {
       </div>`;
     }).join("");
 
+    const cat = getCategory(this.currentCategory);
     const count   = this.selectedAttrs.reduce((acc, a) => acc * (this.allAttrs[a]?.length || 1), 1);
-    const preview = this.selectedAttrs.length > 0
-      ? `<div style="margin-top:10px;padding:8px 12px;background:#e8f5e9;border-radius:6px;font-size:12px;color:#2e7d32;">✓ Matris boyutu: ${this.selectedAttrs.map(a => this.allAttrs[a].length).join(" × ")} = <strong>${count} kombinasyon</strong></div>`
-      : "";
+    let preview = "";
+    if (this.selectedAttrs.length > 0) {
+      preview = `<div style="margin-top:10px;padding:8px 12px;background:#e8f5e9;border-radius:6px;font-size:12px;color:#2e7d32;">✓ Matris boyutu: ${this.selectedAttrs.map(a => this.allAttrs[a].length).join(" × ")} = <strong>${count} kombinasyon</strong></div>`;
+    } else if (cat && cat.allowZeroAttrs) {
+      preview = `<div style="margin-top:10px;padding:8px 12px;background:#fff3e0;border-radius:6px;font-size:12px;color:#e65100;">ℹ️ Parametre seçmeden devam ederseniz bu marka × kategori için <strong>tek bir ${cat.unit} değeri</strong> girersiniz.</div>`;
+    }
+
+    const helperText = cat && cat.allowZeroAttrs
+      ? "Maliyeti hangi özellikler belirliyor? (Boş bırakılabilir)"
+      : "Maliyeti hangi özellikler belirliyor?";
 
     this.setMain(`
       ${this.ctxBar(1)}
       <div style="background:white;border:1px solid #e9ecef;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
         <div style="padding:10px 16px;border-bottom:1px solid #e9ecef;display:flex;align-items:center;gap:8px;">
           <span style="font-weight:700;">Etken Parametreleri Seçin</span>
-          <span style="font-size:11px;color:#6c757d;margin-left:auto;">Kumaş sarfını hangi özellikler belirliyor?</span>
+          <span style="font-size:11px;color:#6c757d;margin-left:auto;">${helperText}</span>
         </div>
         <div style="padding:14px;">
           <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;">${cards}</div>
@@ -521,12 +574,15 @@ class AnaKumashWidget implements IWidgetInstance {
   // ── Step 1 → Step 2 ───────────────────────────────────────────────────────
 
   private goToMatrix(): void {
-    if (this.selectedAttrs.length === 0) { this.toast("En az bir parametre seçin", "error"); return; }
+    const cat = getCategory(this.currentCategory);
+    if (this.selectedAttrs.length === 0 && !(cat && cat.allowZeroAttrs)) {
+      this.toast("En az bir parametre seçin", "error"); return;
+    }
 
     const changed = sortedKey(this.selectedAttrs) !== sortedKey(this.originalAttrs);
     if (changed && this.originalAttrs.length > 0) {
       this.showConfirm(
-        "Parametre seçimi değiştirildi.\nBu kombinasyona ait tüm kayıtlı sarf değerleri silinecek.\n\nDevam etmek istiyor musunuz?",
+        "Parametre seçimi değiştirildi.\nBu kombinasyona ait tüm kayıtlı değerler silinecek.\n\nDevam etmek istiyor musunuz?",
         () => this.doGoToMatrix()
       );
       return;
@@ -549,11 +605,18 @@ class AnaKumashWidget implements IWidgetInstance {
   // ── Step 2 ────────────────────────────────────────────────────────────────
 
   private buildMatrixRows(savedValues: ConsumptionValue[]): void {
-    const arrays = this.selectedAttrs.map(a => (this.allAttrs[a] || []).map(v => ({ attr: a, val: v })));
-    const combos = cartesian(arrays);
-
     const map: { [k: string]: number | null } = {};
     for (const sv of savedValues) map[comboKey(sv.attrCombo)] = sv.consumption;
+
+    if (this.selectedAttrs.length === 0) {
+      // 0 attr modu: tek satır (attrCombo = {})
+      const saved = map[comboKey({})] ?? null;
+      this.matrixRows = [{ combo: {}, consumption: saved, savedValue: saved }];
+      return;
+    }
+
+    const arrays = this.selectedAttrs.map(a => (this.allAttrs[a] || []).map(v => ({ attr: a, val: v })));
+    const combos = cartesian(arrays);
 
     this.matrixRows = combos.map(combo => {
       const obj: AttrCombo = {};
@@ -615,20 +678,32 @@ class AnaKumashWidget implements IWidgetInstance {
       </select>
     </th>`;
 
+    const cat = getCategory(this.currentCategory);
+    const unit = cat ? cat.unit : "m";
+    const inputMax = cat && cat.unit === "TL" ? "99999.99" : "99.999";
+    const inputStep = cat && cat.unit === "TL" ? "0.01" : "0.001";
+
     const rows = visible.map(({ row: r, idx: i }) => {
-      const cells = this.selectedAttrs.map(a =>
-        `<td style="${TD}"><span style="display:inline-block;background:#e8f0fa;color:#1D5FA3;padding:2px 8px;border-radius:10px;font-size:11px;">${r.combo[a]}</span></td>`
-      ).join("");
+      let cells: string;
+      if (this.selectedAttrs.length === 0) {
+        // 0 attr modu: tek bir açıklama hücresi
+        const lbl = (cat && cat.zeroAttrsRowLabel) ? cat.zeroAttrsRowLabel : "Sabit değer";
+        cells = `<td style="${TD};font-size:12px;color:#6c757d;font-style:italic;">${lbl}</td>`;
+      } else {
+        cells = this.selectedAttrs.map(a =>
+          `<td style="${TD}"><span style="display:inline-block;background:#e8f0fa;color:#1D5FA3;padding:2px 8px;border-radius:10px;font-size:11px;">${r.combo[a]}</span></td>`
+        ).join("");
+      }
       const v   = r.consumption;
       const bg  = v !== null ? "#e8f5e9" : "white";
       const bdr = v !== null ? "#2e7d32" : "#e9ecef";
       return `<tr>
         ${cells}
         <td style="${TD}">
-          <input type="number" step="0.001" min="0" max="99.999" data-row="${i}"
-            value="${v !== null ? v : ""}" placeholder="0.000"
-            style="width:90px;padding:5px 8px;border:1px solid ${bdr};border-radius:4px;font-size:13px;text-align:right;outline:none;background:${bg};" />
-          <span style="font-size:11px;color:#6c757d;margin-left:3px;">m</span>
+          <input type="number" step="${inputStep}" min="0" max="${inputMax}" data-row="${i}"
+            value="${v !== null ? v : ""}" placeholder="0"
+            style="width:110px;padding:5px 8px;border:1px solid ${bdr};border-radius:4px;font-size:13px;text-align:right;outline:none;background:${bg};" />
+          <span style="font-size:11px;color:#6c757d;margin-left:3px;">${unit}</span>
         </td>
         <td id="ak-st-${i}" style="${TD}">${this.statusHtml(r)}</td>
       </tr>`;
@@ -639,16 +714,19 @@ class AnaKumashWidget implements IWidgetInstance {
       ? `<button id="ak-clear-filt" style="margin-left:10px;padding:3px 9px;background:#fff3e0;color:#e65100;border:1px solid #ffe0b2;border-radius:10px;font-size:11px;font-weight:600;cursor:pointer;">${activeFilters} filtre aktif — temizle ✕</button>`
       : "";
 
-    const emptyRow = `<tr><td colspan="${this.selectedAttrs.length + 2}" style="padding:30px;text-align:center;color:#adb5bd;font-size:12px;">Filtreyle eşleşen kayıt yok</td></tr>`;
+    const colCount = (this.selectedAttrs.length === 0 ? 1 : this.selectedAttrs.length) + 2;
+    const emptyRow = `<tr><td colspan="${colCount}" style="padding:30px;text-align:center;color:#adb5bd;font-size:12px;">Filtreyle eşleşen kayıt yok</td></tr>`;
+
+    const hintHtml = (cat && cat.hint)
+      ? `<div style="background:#e8f0fa;border-left:3px solid #1D5FA3;padding:8px 12px;font-size:12px;color:#1D5FA3;border-radius:0 6px 6px 0;margin-bottom:12px;">${cat.hint}</div>`
+      : "";
 
     this.setMain(`
       ${this.ctxBar(2)}
-      <div style="background:#e8f0fa;border-left:3px solid #1D5FA3;padding:8px 12px;font-size:12px;color:#1D5FA3;border-radius:0 6px 6px 0;margin-bottom:12px;">
-        ℹ️ Değerler <strong>150 cm kumaş eni</strong> baz alınarak girilmelidir
-      </div>
+      ${hintHtml}
       <div style="background:white;border:1px solid #e9ecef;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
         <div style="padding:10px 16px;border-bottom:1px solid #e9ecef;display:flex;align-items:center;flex-wrap:wrap;">
-          <span style="font-weight:700;">Sarf Değerleri</span>
+          <span style="font-weight:700;">${cat ? cat.unitLabel.replace(" (m)","").replace(" (TL)","") : "Değer"} Tablosu</span>
           ${filterChip}
           <span style="font-size:11px;color:#6c757d;margin-left:auto;">${visible.length} görüntüleniyor / ${filledTotal} dolu / ${total} toplam</span>
         </div>
@@ -661,12 +739,16 @@ class AnaKumashWidget implements IWidgetInstance {
             <table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:auto;">
               <thead>
                 <tr>
-                  ${this.selectedAttrs.map(a => `<th style="${TH}">${a}</th>`).join("")}
-                  <th style="${TH}color:#1D5FA3;">Sarf (m)</th>
+                  ${this.selectedAttrs.length === 0
+                    ? `<th style="${TH}">Kapsam</th>`
+                    : this.selectedAttrs.map(a => `<th style="${TH}">${a}</th>`).join("")}
+                  <th style="${TH}color:#1D5FA3;">${cat ? cat.unitLabel : "Değer"}</th>
                   <th style="${TH}">Durum</th>
                 </tr>
                 <tr>
-                  ${filterCells}
+                  ${this.selectedAttrs.length === 0
+                    ? `<th style="${FILT_BG}"></th>`
+                    : filterCells}
                   <th style="${FILT_BG}"></th>
                   ${statusFilterCell}
                 </tr>
@@ -761,9 +843,11 @@ class AnaKumashWidget implements IWidgetInstance {
   }
 
   private saveValues(): void {
+    const cat = getCategory(this.currentCategory);
+    const unit = cat ? cat.unit : "m";
     const values = this.matrixRows
       .filter(r => r.consumption !== null && !isNaN(r.consumption as number))
-      .map(r => ({ attrCombo: r.combo, consumption: r.consumption, unit: "m" }));
+      .map(r => ({ attrCombo: r.combo, consumption: r.consumption, unit: unit }));
 
     this.apiPost(this.combo("values"), { values }, (_res: any) => {
       this.matrixRows.forEach(r => { r.savedValue = r.consumption; });
@@ -805,7 +889,9 @@ class AnaKumashWidget implements IWidgetInstance {
   // ── API helpers ───────────────────────────────────────────────────────────
 
   private combo(endpoint: string): string {
-    return `/api/ana-kumash/${endpoint}/${enc(this.season)}/${enc(this.brand)}/${enc(this.styleCategory)}`;
+    const cat = getCategory(this.currentCategory);
+    const base = cat ? cat.endpointBase : "/api/ana-kumash";
+    return `${base}/${endpoint}/${enc(this.season)}/${enc(this.brand)}/${enc(this.styleCategory)}`;
   }
 
   // Heroku (ION Gateway üzerinden)
