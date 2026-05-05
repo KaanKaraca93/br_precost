@@ -32,24 +32,42 @@ const BASE_FABRIC_WIDTH = 150;
 const ADJUSTMENT_PER_2CM = 0.01;
 
 // Maliyet kategorileri (Widget 2 — patch widget'ı)
-// Malzeme ve Astar/Garni şimdilik listede yok.
 interface CostCategory {
   key: string;
   icon: string;
   title: string;
   desc: string;
   status: "ready" | "wip";
+  unit: string;                  // "m" / "TL"
+  unitLabel: string;             // "Sarf" / "Tutar"
+  endpointBase: string;          // /api/ana-kumash veya /api/cost-params/<key>
+  applyWidthAdjustment: boolean; // ana-kumash'ta true (kumaş enine göre ±0.01)
+  styleExpandKind: "ana-kumash" | "iscilik";  // STYLE expand farklılaşıyor
+  currentColLabel: string;       // "Mevcut Sarf" / "Mevcut Tutar"
+  fabricColShown: boolean;       // ana-kumash'ta var, iscilik'te yok
 }
 const COST_CATEGORIES: CostCategory[] = [
-  { key: "ana-kumash",   icon: "🧵", title: "Ana Kumaş Sarf",     desc: "Ana kumaşı eksik modelleri bulup PLM'e sarf yazar", status: "ready" },
-  { key: "iscilik",      icon: "👷", title: "İşçilik",            desc: "İşçilik maliyeti eksik modelleri bulur ve yazar",   status: "wip" },
-  { key: "uretim-paket", icon: "📦", title: "Üretim & Paketleme", desc: "Üretim ve paketleme maliyeti eksik modeller",       status: "wip" },
+  { key: "ana-kumash",   icon: "🧵", title: "Ana Kumaş Sarf",     desc: "Ana kumaşı eksik modelleri bulup PLM'e sarf yazar",
+    status: "ready", unit: "m",  unitLabel: "Sarf",
+    endpointBase: "/api/ana-kumash", applyWidthAdjustment: true,
+    styleExpandKind: "ana-kumash", currentColLabel: "Mevcut Sarf", fabricColShown: true },
+  { key: "iscilik",      icon: "👷", title: "İşçilik",            desc: "İşçilik maliyeti eksik modelleri (OpId 1723) bulur ve yazar",
+    status: "ready", unit: "TL", unitLabel: "Tutar",
+    endpointBase: "/api/cost-params/iscilik", applyWidthAdjustment: false,
+    styleExpandKind: "iscilik", currentColLabel: "Mevcut Tutar", fabricColShown: false },
+  { key: "uretim-paket", icon: "📦", title: "Üretim & Paketleme", desc: "Üretim ve paketleme maliyeti eksik modeller",
+    status: "wip", unit: "TL", unitLabel: "Tutar",
+    endpointBase: "/api/cost-params/uretim-paket", applyWidthAdjustment: false,
+    styleExpandKind: "ana-kumash", currentColLabel: "Mevcut Tutar", fabricColShown: false },
 ];
 
 function getCategory(key: string | null): CostCategory | null {
   if (!key) return null;
   return COST_CATEGORIES.find(c => c.key === key) || null;
 }
+
+// İşçilik için özel sabit
+const ISCILIK_OPERATION_ID = 1723;
 
 // Patch akışı sabitleri
 const PLM_VIEW_BASE = "/FASHIONPLM/view/api/view";
@@ -129,6 +147,8 @@ interface ResultRow {
   selected: boolean;
   patchStatus: "idle" | "pending" | "running" | "done" | "error";
   patchMsg: string;
+  // İşçilik için: StyleBOLOperation row Id (OperationId=1723) — yoksa null (yeni satır eklenecek demektir)
+  iscilikOpRowId: number | null;
 }
 
 // ── Widget ────────────────────────────────────────────────────────────────────
@@ -192,7 +212,8 @@ class CostMissingWidget implements IWidgetInstance {
     }
     this.lastRefreshedAt = data ? data.lastRefreshedAt : null;
     this.renderHeader();
-    if (this.currentCategory === "ana-kumash") this.populatePickers();
+    const cat = getCategory(this.currentCategory);
+    if (cat && cat.status === "ready") this.populatePickers();
   }
 
   // ── Multi-select pickers ───────────────────────────────────────────────────
@@ -314,7 +335,7 @@ class CostMissingWidget implements IWidgetInstance {
       return;
     }
     this.currentCategory = key;
-    if (key === "ana-kumash") this.renderAnaKumashShell();
+    this.renderCategoryShell(cat);
   }
 
   private renderUnderConstruction(cat: CostCategory): void {
@@ -338,7 +359,16 @@ class CostMissingWidget implements IWidgetInstance {
   }
 
   private renderAnaKumashShell(): void {
-    this.$el.find("#cm-title").html(this.crumbHtml("🧵 Ana Kumaş — Eksik Modeller"));
+    const cat = getCategory("ana-kumash");
+    if (cat) this.renderCategoryShell(cat);
+  }
+
+  private renderCategoryShell(cat: CostCategory): void {
+    this.$el.find("#cm-title").html(this.crumbHtml(`${cat.icon} ${cat.title} — Eksik Modeller`));
+
+    const hint = cat.key === "iscilik"
+      ? `Sadece <strong>OperationId = ${ISCILIK_OPERATION_ID}</strong> operasyonu olmayan veya HourlyRate'i 0 olan modeller gösterilir.`
+      : `Sadece ana kumaş <code>Quantity</code> değeri 0 veya null olan modeller gösterilir.`;
 
     this.setContent(`
       <div style="background:white;border:1px solid #e9ecef;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;box-shadow:0 1px 4px rgba(0,0,0,.08);">
@@ -352,7 +382,7 @@ class CostMissingWidget implements IWidgetInstance {
         <div style="text-align:center;padding:40px 20px;color:#6c757d;">
           <div style="font-size:36px;margin-bottom:8px;">📋</div>
           <p>Sezon, marka(lar) ve kategori(ler) seçip <strong>Listele</strong>'ye basın</p>
-          <p style="font-size:12px;color:#adb5bd;margin-top:6px;">Sadece ana kumaş <code>Quantity</code> değeri 0 veya null olan modeller gösterilir.</p>
+          <p style="font-size:12px;color:#adb5bd;margin-top:6px;">${hint}</p>
         </div>
       </div>
     `);
@@ -463,12 +493,19 @@ class CostMissingWidget implements IWidgetInstance {
   }
 
   private isApplicable(r: ResultRow): boolean {
+    const cat = getCategory(this.currentCategory);
+    if (cat && cat.key === "iscilik") {
+      // İşçilik patch akışı şu an WIP — listeleme aktif, uygulama kapalı
+      return false;
+    }
     return r.adjustedSuggestion !== null
         && r.bomLineId !== null
         && r.styleBomId !== null;
   }
 
   private applicableReason(r: ResultRow): string {
+    const cat = getCategory(this.currentCategory);
+    if (cat && cat.key === "iscilik") return "İşçilik patch akışı henüz aktif değil";
     if (r.adjustedSuggestion === null) return "Önerilen sarf hesaplanamadı";
     if (r.bomLineId === null)          return "Ana kumaş BOMLine yok";
     if (r.styleBomId === null)         return "StyleBOM yok";
@@ -506,11 +543,14 @@ class CostMissingWidget implements IWidgetInstance {
       this.toast("Seçilen değerlerin ID karşılığı cache'te yok — cache'i yenileyin", "error"); return;
     }
 
+    const cat = getCategory(this.currentCategory);
+    if (!cat) { this.toast("Kategori seçili değil", "error"); return; }
+
     this.loading = true;
     this.setMain(this.emptyState("⏳", "Bulk config + STYLE çağrıları yapılıyor…"));
 
     // 1) Bulk config → bizim DB'mizden parametreler
-    this.apiPost("/api/ana-kumash/lookup-bulk",
+    this.apiPost(`${cat.endpointBase}/lookup-bulk`,
       { season: this.season, brands: this.brands, categories: this.categories },
       (bulk: BulkConfig[]) => {
         this.bulkConfigs = bulk || [];
@@ -519,7 +559,7 @@ class CostMissingWidget implements IWidgetInstance {
         const extFldIds = this.collectExtendedFldIds(this.bulkConfigs);
 
         // 3) STYLE çağrısı
-        const url = this.buildStyleUrl(seasonId, brandIds, catIds, extFldIds);
+        const url = this.buildStyleUrl(seasonId, brandIds, catIds, extFldIds, cat);
         this.ionGet(url,
           (styleRes: any) => {
             const styles: any[] = (styleRes && styleRes.value) ? styleRes.value : [];
@@ -555,14 +595,19 @@ class CostMissingWidget implements IWidgetInstance {
     return Object.keys(set);
   }
 
-  private buildStyleUrl(seasonId: string, brandIds: string[], catIds: string[], extFldIds: string[]): string {
+  private buildStyleUrl(seasonId: string, brandIds: string[], catIds: string[], extFldIds: string[], cat: CostCategory): string {
     const filter = `IsDeleted eq 0 and SeasonId eq ${seasonId} and ${STYLE_STATUS_FILTER}` +
       ` and CategoryId in (${catIds.join(",")}) and BrandId in (${brandIds.join(",")})`;
+
+    // İşçilik için BOO operasyonlarını expand et; ana-kumaş için sadece Id
+    const booExpand = cat.styleExpandKind === "iscilik"
+      ? `StyleBOO($expand=StyleBOLOperation)`
+      : `StyleBOO($select=Id)`;
 
     let expand =
       `StyleBOM($select=Id,Name;$expand=BOMLine($select=Id,Code,Name,Composition,Weight,UserDefinedField12,PurchasePrice,CurrencyId,Quantity;$filter=IsMainLine eq true)),` +
       `StyleCosting($select=Id),` +
-      `StyleBOO($select=Id)`;
+      `${booExpand}`;
 
     if (extFldIds.length > 0) {
       const guidList = extFldIds.map(g => g).join(",");
@@ -575,13 +620,15 @@ class CostMissingWidget implements IWidgetInstance {
   // ── STYLE → ResultRow dönüşümü ─────────────────────────────────────────────
 
   private processStyles(styles: any[]): ResultRow[] {
+    const cat = getCategory(this.currentCategory);
+    const isIscilik = !!cat && cat.key === "iscilik";
+
     const out: ResultRow[] = [];
     const brandAttr = this.byLabel["Marka"];
     const catAttr   = this.byLabel["Kategori"];
 
     for (const s of styles) {
       // Ana kumaş line'ını tüm BOM'larda ara (genellikle StyleBOM[0].BOMLine[0]).
-      // Birden fazla BOM varsa main line'ı barındıran ilk match'i al.
       let line: any = null;
       let styleBomId: number | null = null;
       const boms: any[] = Array.isArray(s.StyleBOM) ? s.StyleBOM : [];
@@ -594,15 +641,35 @@ class CostMissingWidget implements IWidgetInstance {
       const boos: any[] = Array.isArray(s.StyleBOO) ? s.StyleBOO : [];
       const booId: number | null = boos.length > 0 ? boos[0].Id : null;
 
-      const qty = (line && line.Quantity !== undefined && line.Quantity !== null)
-        ? parseFloat(line.Quantity)
-        : null;
+      let qty: number | null;
+      let iscilikOpRowId: number | null = null;
 
-      // Modeli listeye dahil etme kuralı:
-      //   - Main BOMLine YOK → ana kumaş tanımı yok, listele (kullanıcı görmek ister)
-      //   - Main BOMLine var ama qty 0/null → eksik, listele
-      //   - Main BOMLine var ve qty > 0 → tam, gösterme
-      if (line && qty !== null && qty > 0) continue;
+      if (isIscilik) {
+        // İşçilik: tüm BOO'ların StyleBOLOperation listesinde OperationId=1723 ara
+        let foundOp: any = null;
+        for (const boo of boos) {
+          const ops: any[] = Array.isArray(boo && boo.StyleBOLOperation) ? boo.StyleBOLOperation : [];
+          const m = ops.find(o => o && Number(o.OperationId) === ISCILIK_OPERATION_ID);
+          if (m) { foundOp = m; break; }
+        }
+        if (foundOp) {
+          const hr = (foundOp.HourlyRate !== undefined && foundOp.HourlyRate !== null)
+            ? parseFloat(foundOp.HourlyRate) : null;
+          // > 0 ise tam → gösterme
+          if (hr !== null && hr > 0) continue;
+          qty = hr;
+          iscilikOpRowId = foundOp.Id !== undefined && foundOp.Id !== null ? Number(foundOp.Id) : null;
+        } else {
+          // OperationId 1723 yok → eksik, listele
+          qty = null;
+        }
+      } else {
+        // Ana kumaş: BOMLine.Quantity'e bak
+        qty = (line && line.Quantity !== undefined && line.Quantity !== null)
+          ? parseFloat(line.Quantity)
+          : null;
+        if (line && qty !== null && qty > 0) continue;
+      }
 
       const brandName = brandAttr ? this.nameOf(brandAttr, String(s.BrandId)) : String(s.BrandId);
       const catName   = catAttr   ? this.nameOf(catAttr,   String(s.CategoryId)) : String(s.CategoryId);
@@ -646,16 +713,21 @@ class CostMissingWidget implements IWidgetInstance {
           }
         }
 
-        // Combo'ya uyan kayıtlı sarf değerini bul
-        if (comboFullyResolved) {
+        // Combo'ya uyan kayıtlı değeri bul. Eğer kategoride hiç attribute seçilmemişse
+        // (allowZeroAttrs — ör. işçilik, kategori bazlı tek değer) combo boş olur ve
+        // bulkConfig.values içinde attrCombo: {} olan tek satır beklenir.
+        const noAttrs = config.selectedAttrs.length === 0;
+        if (noAttrs || comboFullyResolved) {
           const found = config.values.find(v => this.combosEqual(v.attrCombo, combo));
           if (found && found.consumption !== null) {
             matchStatus    = "match";
             baseSuggestion = found.consumption;
-            reason = "150 cm baz değer";
+            reason = isIscilik ? "Tanımlı tutar" : "150 cm baz değer";
           } else {
             matchStatus = "partial";
-            reason = "Bu kombinasyon için sarf değeri girilmemiş";
+            reason = noAttrs
+              ? "Bu marka/kategori için tutar girilmemiş"
+              : "Bu kombinasyon için değer girilmemiş";
           }
         } else {
           matchStatus = "partial";
@@ -663,9 +735,9 @@ class CostMissingWidget implements IWidgetInstance {
         }
       }
 
-      // Kumaş eni — line yoksa null
-      const widthCm = line ? this.resolveFabricWidth(line.UserDefinedField12) : null;
-      const adjusted = (baseSuggestion !== null && widthCm !== null)
+      // Kumaş eni & en'e göre düzeltme — sadece ana-kumaş için
+      const widthCm = (!isIscilik && line) ? this.resolveFabricWidth(line.UserDefinedField12) : null;
+      const adjusted = (!isIscilik && baseSuggestion !== null && widthCm !== null)
         ? this.adjustForWidth(baseSuggestion, widthCm)
         : baseSuggestion;
 
@@ -676,11 +748,11 @@ class CostMissingWidget implements IWidgetInstance {
         brand:         brandName,
         category:      catName,
         styleBomId:    styleBomId,
-        bomLineId:     line && line.Id ? line.Id : null,
+        bomLineId:     (!isIscilik && line && line.Id) ? line.Id : null,
         booId:         booId,
-        bomLine:       line,
+        bomLine:       isIscilik ? null : line,
         currentQty:    qty,
-        fabricCode:    line ? (line.Code || "") : "",
+        fabricCode:    (!isIscilik && line) ? (line.Code || "") : "",
         fabricWidthCm: widthCm,
         combo:         combo,
         comboReadable: Object.keys(combo).length === 0 ? "—" : Object.entries(combo).map(([k, v]) => `${k}: ${v}`).join(", "),
@@ -691,6 +763,7 @@ class CostMissingWidget implements IWidgetInstance {
         selected:    false,
         patchStatus: "idle",
         patchMsg:    "",
+        iscilikOpRowId: iscilikOpRowId,
       });
     }
 
@@ -731,10 +804,17 @@ class CostMissingWidget implements IWidgetInstance {
   // ── Sonuçları render ────────────────────────────────────────────────────────
 
   private renderResults(): void {
+    const cat = getCategory(this.currentCategory);
+    const isIscilik = !!cat && cat.key === "iscilik";
+    const unit = cat ? cat.unit : "m";
+    const showFabric = !!cat && cat.fabricColShown;
+
     if (this.results.length === 0) {
       const msg = this.totalFetched === 0
         ? "PLM'den seçili kriterlere uygun model dönmedi (filtre/yetki kontrolü)"
-        : `PLM ${this.totalFetched} model döndürdü, hepsinde ana kumaş sarfı tanımlı (qty > 0). Eksik model yok.`;
+        : (isIscilik
+            ? `PLM ${this.totalFetched} model döndürdü, hepsinde işçilik (OperationId ${ISCILIK_OPERATION_ID}) tanımlı. Eksik model yok.`
+            : `PLM ${this.totalFetched} model döndürdü, hepsinde ana kumaş sarfı tanımlı (qty > 0). Eksik model yok.`);
       this.setMain(this.emptyState("✅", msg));
       return;
     }
@@ -751,16 +831,17 @@ class CostMissingWidget implements IWidgetInstance {
     const TH = "text-align:left;padding:7px 10px;background:#f1f3f5;border-bottom:2px solid #e9ecef;font-size:11px;font-weight:700;color:#6c757d;text-transform:uppercase;white-space:nowrap;";
     const TD = "padding:7px 10px;border-bottom:1px solid #f1f3f5;vertical-align:top;font-size:12px;";
 
+    const fmtVal = (v: number) => isIscilik ? v.toFixed(2) : v.toFixed(3);
     const rows = this.results.map((r, i) => {
       const status = this.statusBadge(r.matchStatus);
       const widthTxt = r.fabricWidthCm !== null ? `${r.fabricWidthCm} cm` : `<span style="color:#adb5bd;">?</span>`;
-      const baseTxt = r.baseSuggestion !== null ? `${r.baseSuggestion.toFixed(3)} m` : "—";
+      const baseTxt = r.baseSuggestion !== null ? `${fmtVal(r.baseSuggestion)} ${unit}` : "—";
       const adjTxt  = r.adjustedSuggestion !== null
-        ? `<strong style="color:#1D5FA3;">${r.adjustedSuggestion.toFixed(3)} m</strong>`
+        ? `<strong style="color:#1D5FA3;">${fmtVal(r.adjustedSuggestion)} ${unit}</strong>`
         : `<span style="color:#adb5bd;">—</span>`;
       const qtyTxt = r.currentQty === null
         ? `<span style="color:#c62828;font-weight:600;">null</span>`
-        : `<span style="color:#c62828;font-weight:600;">${r.currentQty}</span>`;
+        : `<span style="color:#c62828;font-weight:600;">${fmtVal(r.currentQty)}${isIscilik ? " " + unit : ""}</span>`;
 
       const applicable = this.isApplicable(r);
       const chkStyle   = "width:16px;height:16px;min-width:16px;min-height:16px;padding:0;margin:0;flex:none;appearance:auto;-webkit-appearance:checkbox;-moz-appearance:checkbox;vertical-align:middle;";
@@ -780,6 +861,14 @@ class CostMissingWidget implements IWidgetInstance {
         ? `<div style="color:#c62828;font-size:10px;margin-top:2px;">${r.patchMsg || "hata"}</div>`
         : "";
 
+      const fabricCell = showFabric
+        ? `<td style="${TD}"><div style="font-family:monospace;">${r.fabricCode || "—"}</div><div style="color:#6c757d;font-size:11px;">En: ${widthTxt}</div></td>`
+        : "";
+
+      const adjCell = showFabric
+        ? `<td style="${TD};text-align:right;">${adjTxt}</td>`
+        : "";
+
       return `<tr>
         <td style="${TD};text-align:center;">${checkbox}</td>
         <td style="${TD}">
@@ -789,13 +878,10 @@ class CostMissingWidget implements IWidgetInstance {
         <td style="${TD}">${r.brand}</td>
         <td style="${TD}">${r.category}</td>
         <td style="${TD};text-align:right;">${qtyTxt}</td>
-        <td style="${TD}">
-          <div style="font-family:monospace;">${r.fabricCode || "—"}</div>
-          <div style="color:#6c757d;font-size:11px;">En: ${widthTxt}</div>
-        </td>
+        ${fabricCell}
         <td style="${TD};font-size:11px;color:#6c757d;">${r.comboReadable || "—"}</td>
         <td style="${TD};text-align:right;">${baseTxt}</td>
-        <td style="${TD};text-align:right;">${adjTxt}</td>
+        ${adjCell}
         <td style="${TD}">${status}<div style="font-size:10px;color:#6c757d;margin-top:2px;">${r.reason}</div>${errLine}</td>
         <td style="${TD};text-align:center;">${applyBtn}</td>
       </tr>`;
@@ -827,11 +913,11 @@ class CostMissingWidget implements IWidgetInstance {
               <th style="${TH}">Style</th>
               <th style="${TH}">Marka</th>
               <th style="${TH}">Kategori</th>
-              <th style="${TH};text-align:right;">Mevcut Sarf</th>
-              <th style="${TH}">Kumaş</th>
+              <th style="${TH};text-align:right;">${cat ? cat.currentColLabel : "Mevcut"}</th>
+              ${showFabric ? `<th style="${TH}">Kumaş</th>` : ""}
               <th style="${TH}">Kombinasyon</th>
-              <th style="${TH};text-align:right;">Baz Öneri (150cm)</th>
-              <th style="${TH};text-align:right;">Düzeltilmiş</th>
+              <th style="${TH};text-align:right;">${isIscilik ? "Önerilen Tutar" : "Baz Öneri (150cm)"}</th>
+              ${showFabric ? `<th style="${TH};text-align:right;">Düzeltilmiş</th>` : ""}
               <th style="${TH}">Eşleşme</th>
               <th style="${TH};text-align:center;">Aksiyon</th>
             </tr></thead>
