@@ -199,8 +199,10 @@ class CostMissingWidget implements IWidgetInstance {
     const items = attr.values.map(v => {
       const checked = selected.indexOf(v.name) !== -1;
       const inputType = isMulti ? "checkbox" : "radio";
+      const appearance = isMulti ? "checkbox" : "radio";
+      const inputStyle = `width:16px;height:16px;min-width:16px;min-height:16px;padding:0;margin:0;flex:none;appearance:auto;-webkit-appearance:${appearance};-moz-appearance:${appearance};cursor:pointer;`;
       return `<label style="display:flex;align-items:center;gap:8px;padding:5px 10px;cursor:pointer;border-radius:4px;font-size:12px;" onmouseover="this.style.background='#f1f3f5'" onmouseout="this.style.background='transparent'">
-        <input type="${inputType}" name="cm-pick-${key}" value="${esc(v.name)}" ${checked ? "checked" : ""} style="margin:0;cursor:pointer;" />
+        <input type="${inputType}" name="cm-pick-${key}" value="${esc(v.name)}" ${checked ? "checked" : ""} style="${inputStyle}" />
         <span>${v.name}</span>
       </label>`;
     }).join("");
@@ -644,9 +646,10 @@ class CostMissingWidget implements IWidgetInstance {
         : `<span style="color:#c62828;font-weight:600;">${r.currentQty}</span>`;
 
       const applicable = this.isApplicable(r);
+      const chkStyle   = "width:16px;height:16px;min-width:16px;min-height:16px;padding:0;margin:0;flex:none;appearance:auto;-webkit-appearance:checkbox;-moz-appearance:checkbox;vertical-align:middle;";
       const checkbox = applicable
-        ? `<input type="checkbox" data-row="${i}" class="cm-row-chk" ${r.selected ? "checked" : ""} ${r.patchStatus === "running" || r.patchStatus === "done" ? "disabled" : ""} style="cursor:pointer;" />`
-        : `<input type="checkbox" disabled title="${this.applicableReason(r)}" style="cursor:not-allowed;opacity:.4;" />`;
+        ? `<input type="checkbox" data-row="${i}" class="cm-row-chk" ${r.selected ? "checked" : ""} ${r.patchStatus === "running" || r.patchStatus === "done" ? "disabled" : ""} style="${chkStyle}cursor:pointer;" />`
+        : `<input type="checkbox" disabled title="${this.applicableReason(r)}" style="${chkStyle}cursor:not-allowed;opacity:.4;" />`;
 
       const applyBtn = applicable
         ? (r.patchStatus === "done"
@@ -702,7 +705,7 @@ class CostMissingWidget implements IWidgetInstance {
           <table style="width:100%;border-collapse:collapse;">
             <thead><tr>
               <th style="${TH};text-align:center;width:34px;">
-                <input type="checkbox" id="cm-chk-all" ${allChecked ? "checked" : ""} ${applicableCount === 0 || this.applying ? "disabled" : ""} style="cursor:pointer;" />
+                <input type="checkbox" id="cm-chk-all" ${allChecked ? "checked" : ""} ${applicableCount === 0 || this.applying ? "disabled" : ""} style="width:16px;height:16px;min-width:16px;min-height:16px;padding:0;margin:0;flex:none;appearance:auto;-webkit-appearance:checkbox;-moz-appearance:checkbox;vertical-align:middle;cursor:pointer;" />
               </th>
               <th style="${TH}">Style</th>
               <th style="${TH}">Marka</th>
