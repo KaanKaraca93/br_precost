@@ -34,6 +34,7 @@ const ADJUSTMENT_PER_2CM = 0.01;
 // Patch akışı sabitleri
 const PLM_VIEW_BASE = "/FASHIONPLM/view/api/view";
 const PLM_PDM_BASE  = "/FASHIONPLM/pdm/api/pdm";
+const PLM_CLIENT_VERSION = "16.0.32";
 const PATCH_USER_ID = 124;
 const PATCH_EXCHANGE_RATE_TYPE = 1;
 const PATCH_EXCHANGE_RATE_DATE = "2024-04-20T00:00:00Z";
@@ -844,7 +845,11 @@ class CostMissingWidget implements IWidgetInstance {
         ] },
         pageInfo: {},
         Schema:  PATCH_SCHEMA,
-      }, { "Content-Type": "application/json-patch+json", "accept": "text/plain" });
+      }, {
+        "Content-Type": "application/json-patch+json",
+        "accept":       "text/plain",
+        "x-fplm-client-version": PLM_CLIENT_VERSION,
+      });
       const rowVersionText = this.extractRowVersionText(viewRes);
       if (!rowVersionText) throw new Error("RowVersionText okunamadı");
 
@@ -859,6 +864,8 @@ class CostMissingWidget implements IWidgetInstance {
         notificationMessageKey: "UPDATED_STYLE_COSTING",
         settings:       COSTING_SAVE_SETTINGS,
         Schema:         PATCH_SCHEMA,
+      }, {
+        "x-fplm-client-version": PLM_CLIENT_VERSION,
       });
 
       r.patchStatus = "done";
