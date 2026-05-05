@@ -31,6 +31,42 @@ const STYLE_STATUS_FILTER = "(Status eq 106 or Status eq 108 or Status eq 102 or
 const BASE_FABRIC_WIDTH = 150;
 const ADJUSTMENT_PER_2CM = 0.01;
 
+// Patch akışı sabitleri
+const PLM_VIEW_BASE = "/FASHIONPLM/view/api/view";
+const PLM_PDM_BASE  = "/FASHIONPLM/pdm/api/pdm";
+const PATCH_USER_ID = 124;
+const PATCH_EXCHANGE_RATE_TYPE = 1;
+const PATCH_EXCHANGE_RATE_DATE = "2024-04-20T00:00:00Z";
+const PATCH_QUANTITY_UOM_ID    = "9";    // mt
+const PATCH_CURRENCY_ID        = 4;
+const PATCH_SCHEMA             = "FSH1";
+
+// Costing save için sabit settings (PLM örnek payload'undan birebir alındı)
+const COSTING_SAVE_SETTINGS = {
+  key: "bomdetails",
+  value: JSON.stringify({
+    decimalCount: { qty: 3 },
+    colorFormat:  { type: "3", withPitch: true },
+    costingDefaults: { defexchratetype: 1 },
+    autoCascadeDataToBOM: {
+      autoCascadeMaterial: { isActive: true, fields: { Code: true, Name: true, Description: true, Notes: false, MainCategoryId: true, ComponentCategoryGroupId: true, CategoryId: true, Image: true, Placement: true, Composition: true, FreeFieldCert: true, IsCriticalMaterial: true, IsChemicalWarning: true, Status: true, QuantityUOM: false, WastePercent: true, CurrencyId: true, PurchasePrice: true, Construction: true, Weight: true, WeightUOMId: true, Finish: true, UserDefinedField1: true, UserDefinedField2: true, UserDefinedField3: true, UserDefinedField4: true, UserDefinedField12: true, UserDefinedField13: true, Operational: true, FreeField1: true, FreeField2: true, FreeField3: true, FreeField4: false, ERPCode: true, IntegrationStatus: false } },
+      autoCascadeTrim:     { isActive: true, fields: { Code: true, Name: true, Description: true, Notes: true,  MainCategoryId: true, ComponentCategoryGroupId: true, CategoryId: true, Image: true, Placement: true, Composition: true, FreeFieldCert: true, IsCriticalMaterial: true, IsChemicalWarning: true, Status: true, QuantityUOM: false, WastePercent: true, CurrencyId: true, PurchasePrice: true, Construction: true, Weight: true, WeightUOMId: true, Finish: true, UserDefinedField1: true, UserDefinedField2: true, UserDefinedField3: true, UserDefinedField4: true, UserDefinedField12: true, UserDefinedField13: true, Operational: true, FreeField1: true, FreeField2: true, FreeField3: true, FreeField4: true,  ERPCode: true, IntegrationStatus: true  } },
+      autoCascadeStyle:    { isActive: false, fields: { CategoryId: false, SubCategoryId: false, ProductSubSubCategoryId: false, CostPrice: false, CurrencyId: false, Description: false, FreeField1: false, FreeField2: false, FreeField3: false, FreeField4: false, Image: false, Name: false, Notes: false, Number: false, PurchasePrice: false, UOMId: false, Status: false, UserDefinedField1: false, UserDefinedField2: false, UserDefinedField3: false, UserDefinedField4: false, UserDefinedField12: false, UserDefinedField13: false, ERPCode: false, IntegrationStatus: false, Code: false } },
+      enableAutoCascade: true,
+      enableSyncMainSupplier: true,
+    },
+    calculations: [],
+    checkboxBomSequenceSettings: { enableBomSequenceSettings: true },
+    checkBoxRemoveBOMLineSettings: { enableSMTFreeField3: true, enablePlacement: true },
+    checkBoxBomGeocodeSettings: { enableGeocode: false },
+    bomStyleSetSettings: { IsUniqueStyleSets: true },
+    bomMainMaterialSettings: { isOneMaterialOnly: false, isMultipleMaterial: false },
+  }),
+  workFlow: null, careGroup: null, category: null,
+  requestType: null, requestSubType: null, requestStatus: null,
+  sourcingTag: null, dataSchemas: null, massCreateModules: null,
+};
+
 // ── Veri tipleri ─────────────────────────────────────────────────────────────
 
 interface LookupValue { id: string | null; name: string; code: string | null; seq: number; }
@@ -56,6 +92,9 @@ interface ResultRow {
   name: string;
   brand: string;
   category: string;
+  styleBomId: number | null;
+  bomLineId: number | null;
+  booId: number | null;
   bomLine: any;             // raw bom line
   currentQty: number | null;
   fabricCode: string;
@@ -66,6 +105,9 @@ interface ResultRow {
   baseSuggestion: number | null;       // 150cm baz öneri
   adjustedSuggestion: number | null;   // kumaş enine göre düzeltilmiş
   reason: string;                      // kullanıcıya açıklama
+  selected: boolean;
+  patchStatus: "idle" | "pending" | "running" | "done" | "error";
+  patchMsg: string;
 }
 
 // ── Widget ────────────────────────────────────────────────────────────────────
@@ -89,6 +131,7 @@ class CostMissingWidget implements IWidgetInstance {
   private loading:     boolean = false;
   private toastTimer:  any = null;
   private totalFetched: number = 0;
+  private applying:     boolean = false;
 
   // multi-select popover state
   private openPicker:  string | null = null;
@@ -276,6 +319,40 @@ class CostMissingWidget implements IWidgetInstance {
 
     // Listele
     this.$el.on("click", "#cm-list", () => this.runListing());
+
+    // Sonuç tablosu — checkbox & uygula
+    this.$el.on("change", ".cm-row-chk", (e: JQueryEventObject) => {
+      const i = parseInt($(e.currentTarget).attr("data-row") || "-1", 10);
+      if (i < 0 || !this.results[i]) return;
+      this.results[i].selected = $(e.currentTarget).is(":checked");
+      this.renderResults();
+    });
+    this.$el.on("change", "#cm-chk-all", (e: JQueryEventObject) => {
+      const checked = $(e.currentTarget).is(":checked");
+      for (const r of this.results) {
+        if (this.isApplicable(r) && r.patchStatus !== "done" && r.patchStatus !== "running") r.selected = checked;
+      }
+      this.renderResults();
+    });
+    this.$el.on("click", "[data-apply]", (e: JQueryEventObject) => {
+      const i = parseInt($(e.currentTarget).attr("data-apply") || "-1", 10);
+      if (i < 0 || !this.results[i]) return;
+      this.applyOne(i, /* fromBulk */ false);
+    });
+    this.$el.on("click", "#cm-apply-bulk", () => this.applyBulk());
+  }
+
+  private isApplicable(r: ResultRow): boolean {
+    return r.adjustedSuggestion !== null
+        && r.bomLineId !== null
+        && r.styleBomId !== null;
+  }
+
+  private applicableReason(r: ResultRow): string {
+    if (r.adjustedSuggestion === null) return "Önerilen sarf hesaplanamadı";
+    if (r.bomLineId === null)          return "Ana kumaş BOMLine yok";
+    if (r.styleBomId === null)         return "StyleBOM yok";
+    return "";
   }
 
   private toggleArray(arr: string[], val: string, add: boolean): string[] {
@@ -363,8 +440,9 @@ class CostMissingWidget implements IWidgetInstance {
       ` and CategoryId in (${catIds.join(",")}) and BrandId in (${brandIds.join(",")})`;
 
     let expand =
-      `StyleBOM($select=Id,Name;$expand=BOMLine($select=Code,Name,Composition,Weight,UserDefinedField12,PurchasePrice,CurrencyId,Quantity;$filter=IsMainLine eq true)),` +
-      `StyleCosting($select=Id)`;
+      `StyleBOM($select=Id,Name;$expand=BOMLine($select=Id,Code,Name,Composition,Weight,UserDefinedField12,PurchasePrice,CurrencyId,Quantity;$filter=IsMainLine eq true)),` +
+      `StyleCosting($select=Id),` +
+      `StyleBOO($select=Id)`;
 
     if (extFldIds.length > 0) {
       const guidList = extFldIds.map(g => g).join(",");
@@ -385,11 +463,16 @@ class CostMissingWidget implements IWidgetInstance {
       // Ana kumaş line'ını tüm BOM'larda ara (genellikle StyleBOM[0].BOMLine[0]).
       // Birden fazla BOM varsa main line'ı barındıran ilk match'i al.
       let line: any = null;
+      let styleBomId: number | null = null;
       const boms: any[] = Array.isArray(s.StyleBOM) ? s.StyleBOM : [];
       for (const b of boms) {
         const lines: any[] = Array.isArray(b && b.BOMLine) ? b.BOMLine : [];
-        if (lines.length > 0) { line = lines[0]; break; }
+        if (lines.length > 0) { line = lines[0]; styleBomId = b.Id; break; }
       }
+      if (styleBomId === null && boms.length > 0) styleBomId = boms[0].Id;
+
+      const boos: any[] = Array.isArray(s.StyleBOO) ? s.StyleBOO : [];
+      const booId: number | null = boos.length > 0 ? boos[0].Id : null;
 
       const qty = (line && line.Quantity !== undefined && line.Quantity !== null)
         ? parseFloat(line.Quantity)
@@ -472,6 +555,9 @@ class CostMissingWidget implements IWidgetInstance {
         name:          s.Name || "",
         brand:         brandName,
         category:      catName,
+        styleBomId:    styleBomId,
+        bomLineId:     line && line.Id ? line.Id : null,
+        booId:         booId,
         bomLine:       line,
         currentQty:    qty,
         fabricCode:    line ? (line.Code || "") : "",
@@ -482,6 +568,9 @@ class CostMissingWidget implements IWidgetInstance {
         baseSuggestion,
         adjustedSuggestion: adjusted,
         reason,
+        selected:    false,
+        patchStatus: "idle",
+        patchMsg:    "",
       });
     }
 
@@ -536,11 +625,13 @@ class CostMissingWidget implements IWidgetInstance {
       none:      this.results.filter(r => r.matchStatus === "none").length,
       noConfig:  this.results.filter(r => r.matchStatus === "no-config").length,
     };
+    const applicableCount = this.results.filter(r => this.isApplicable(r)).length;
+    const selectedCount   = this.results.filter(r => r.selected && this.isApplicable(r)).length;
 
     const TH = "text-align:left;padding:7px 10px;background:#f1f3f5;border-bottom:2px solid #e9ecef;font-size:11px;font-weight:700;color:#6c757d;text-transform:uppercase;white-space:nowrap;";
     const TD = "padding:7px 10px;border-bottom:1px solid #f1f3f5;vertical-align:top;font-size:12px;";
 
-    const rows = this.results.map(r => {
+    const rows = this.results.map((r, i) => {
       const status = this.statusBadge(r.matchStatus);
       const widthTxt = r.fabricWidthCm !== null ? `${r.fabricWidthCm} cm` : `<span style="color:#adb5bd;">?</span>`;
       const baseTxt = r.baseSuggestion !== null ? `${r.baseSuggestion.toFixed(3)} m` : "—";
@@ -551,7 +642,25 @@ class CostMissingWidget implements IWidgetInstance {
         ? `<span style="color:#c62828;font-weight:600;">null</span>`
         : `<span style="color:#c62828;font-weight:600;">${r.currentQty}</span>`;
 
+      const applicable = this.isApplicable(r);
+      const checkbox = applicable
+        ? `<input type="checkbox" data-row="${i}" class="cm-row-chk" ${r.selected ? "checked" : ""} ${r.patchStatus === "running" || r.patchStatus === "done" ? "disabled" : ""} style="cursor:pointer;" />`
+        : `<input type="checkbox" disabled title="${this.applicableReason(r)}" style="cursor:not-allowed;opacity:.4;" />`;
+
+      const applyBtn = applicable
+        ? (r.patchStatus === "done"
+            ? `<span style="color:#2e7d32;font-weight:700;">✓ Uygulandı</span>`
+            : r.patchStatus === "running"
+              ? `<span style="color:#1D5FA3;">⏳ İşleniyor…</span>`
+              : `<button data-apply="${i}" style="padding:4px 10px;background:#1D5FA3;color:white;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">Uygula</button>`)
+        : `<span style="color:#adb5bd;font-size:11px;">—</span>`;
+
+      const errLine = r.patchStatus === "error"
+        ? `<div style="color:#c62828;font-size:10px;margin-top:2px;">${r.patchMsg || "hata"}</div>`
+        : "";
+
       return `<tr>
+        <td style="${TD};text-align:center;">${checkbox}</td>
         <td style="${TD}">
           <div style="font-weight:700;color:#1D5FA3;">${r.styleCode}</div>
           <div style="color:#6c757d;font-size:11px;">${r.name}</div>
@@ -566,9 +675,13 @@ class CostMissingWidget implements IWidgetInstance {
         <td style="${TD};font-size:11px;color:#6c757d;">${r.comboReadable || "—"}</td>
         <td style="${TD};text-align:right;">${baseTxt}</td>
         <td style="${TD};text-align:right;">${adjTxt}</td>
-        <td style="${TD}">${status}<div style="font-size:10px;color:#6c757d;margin-top:2px;">${r.reason}</div></td>
+        <td style="${TD}">${status}<div style="font-size:10px;color:#6c757d;margin-top:2px;">${r.reason}</div>${errLine}</td>
+        <td style="${TD};text-align:center;">${applyBtn}</td>
       </tr>`;
     }).join("");
+
+    const allChecked = applicableCount > 0 && selectedCount === applicableCount;
+    const bulkDisabled = selectedCount === 0 || this.applying;
 
     this.setMain(`
       <div style="background:white;border:1px solid #e9ecef;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
@@ -577,11 +690,19 @@ class CostMissingWidget implements IWidgetInstance {
           <span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">${matchCounts.match} eşleşti</span>
           <span style="background:#fff3e0;color:#e65100;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">${matchCounts.partial} kısmi</span>
           <span style="background:#ffebee;color:#c62828;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">${matchCounts.noConfig} parametresiz</span>
-          <span style="background:#f1f3f5;color:#6c757d;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-left:auto;">Düzeltme: 150cm baz, her 2cm = ±0.01m</span>
+          <span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">
+            <span style="background:#e8f0fa;color:#1D5FA3;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;">Seçili: ${selectedCount} / Uygulanabilir: ${applicableCount}</span>
+            <button id="cm-apply-bulk" ${bulkDisabled ? "disabled" : ""} style="padding:6px 14px;background:${bulkDisabled ? "#adb5bd" : "#2e7d32"};color:white;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:${bulkDisabled ? "not-allowed" : "pointer"};">
+              ${this.applying ? "⏳ Uygulanıyor…" : "Seçilenleri Uygula"}
+            </button>
+          </span>
         </div>
         <div style="overflow-x:auto;">
           <table style="width:100%;border-collapse:collapse;">
             <thead><tr>
+              <th style="${TH};text-align:center;width:34px;">
+                <input type="checkbox" id="cm-chk-all" ${allChecked ? "checked" : ""} ${applicableCount === 0 || this.applying ? "disabled" : ""} style="cursor:pointer;" />
+              </th>
               <th style="${TH}">Style</th>
               <th style="${TH}">Marka</th>
               <th style="${TH}">Kategori</th>
@@ -591,6 +712,7 @@ class CostMissingWidget implements IWidgetInstance {
               <th style="${TH};text-align:right;">Baz Öneri (150cm)</th>
               <th style="${TH};text-align:right;">Düzeltilmiş</th>
               <th style="${TH}">Eşleşme</th>
+              <th style="${TH};text-align:center;">Aksiyon</th>
             </tr></thead>
             <tbody>${rows}</tbody>
           </table>
@@ -663,6 +785,154 @@ class CostMissingWidget implements IWidgetInstance {
   private ionGet(fullPath: string, onSuccess: (d: any) => void, onError: (e: any) => void): void {
     this.widgetContext.executeIonApiAsync({ method: "GET", url: fullPath, cache: false })
       .subscribe((res: any) => onSuccess(res.data), (err: any) => onError(err));
+  }
+
+  // ── PLM patch / save (Promise-tabanlı, sıralı zincir için) ──────────────────
+
+  private ionRequest(method: string, url: string, body?: any, headers?: any): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const opts: any = { method: method, url: url, cache: false };
+      if (body !== undefined) {
+        opts.data = typeof body === "string" ? body : JSON.stringify(body);
+        opts.headers = Object.assign({ "Content-Type": "application/json" }, headers || {});
+      } else if (headers) {
+        opts.headers = headers;
+      }
+      this.widgetContext.executeIonApiAsync(opts)
+        .subscribe((res: any) => resolve(res ? res.data : null), (err: any) => reject(err));
+    });
+  }
+
+  // ── Patch akışı (4 adım) ───────────────────────────────────────────────────
+
+  private async applyOne(idx: number, fromBulk: boolean): Promise<boolean> {
+    const r = this.results[idx];
+    if (!r || !this.isApplicable(r)) return false;
+    if (r.patchStatus === "running" || r.patchStatus === "done") return r.patchStatus === "done";
+
+    r.patchStatus = "running";
+    r.patchMsg    = "";
+    if (!fromBulk) this.renderResults();
+
+    try {
+      // 1) STYLEBOM setup
+      const styleBomBody: any = {
+        Id:               r.styleBomId,
+        ExchangeRateType: PATCH_EXCHANGE_RATE_TYPE,
+        ExchangeRateDate: PATCH_EXCHANGE_RATE_DATE,
+      };
+      if (r.booId !== null) styleBomBody.BOOVersion = r.booId;
+      await this.ionRequest("PATCH", `${PLM_BASE}/STYLEBOM`, [styleBomBody]);
+
+      // 2) BOMLINE quantity
+      const qtyStr = r.adjustedSuggestion!.toFixed(3);
+      await this.ionRequest("PATCH", `${PLM_BASE}/BOMLINE(${r.bomLineId})`, {
+        QuantityUOMId: PATCH_QUANTITY_UOM_ID,
+        Quantity:      qtyStr,
+      });
+
+      // 3) Costing rowVersionText oku
+      const viewRes = await this.ionRequest("POST", `${PLM_VIEW_BASE}/layout/data/get`, {
+        roleId: 1,
+        userId: PATCH_USER_ID,
+        personalizationId: 0,
+        entity: "StyleCosting",
+        pageType: "details",
+        dataFilter: { conditions: [
+          { FieldName: "IsDeleted", Operator: "=", Value: 0 },
+          { FieldName: "StyleId",   Operator: "=", Value: String(r.styleId) },
+        ] },
+        pageInfo: {},
+        Schema:  PATCH_SCHEMA,
+      }, { "Content-Type": "application/json-patch+json", "accept": "text/plain" });
+      const rowVersionText = this.extractRowVersionText(viewRes);
+      if (!rowVersionText) throw new Error("RowVersionText okunamadı");
+
+      // 4) Costing save
+      await this.ionRequest("POST", `${PLM_PDM_BASE}/style/costing/save`, {
+        key:            String(r.styleId),
+        fieldValues:    [{ fieldName: "CurrencyId", value: PATCH_CURRENCY_ID }],
+        subEntities:    [],
+        modifyId:       PATCH_USER_ID,
+        userId:         PATCH_USER_ID,
+        rowVersionText: rowVersionText,
+        notificationMessageKey: "UPDATED_STYLE_COSTING",
+        settings:       COSTING_SAVE_SETTINGS,
+        Schema:         PATCH_SCHEMA,
+      });
+
+      r.patchStatus = "done";
+      r.patchMsg    = `${qtyStr} m yazıldı`;
+      r.currentQty  = parseFloat(qtyStr);
+      r.selected    = false;
+      if (!fromBulk) {
+        this.renderResults();
+        this.toast(`${r.styleCode} güncellendi ✓`, "success");
+      }
+      return true;
+    } catch (err: any) {
+      r.patchStatus = "error";
+      r.patchMsg    = this.errMsg(err);
+      Log.error(`[CostMissing][apply ${r.styleCode}] ${r.patchMsg}`);
+      if (!fromBulk) {
+        this.renderResults();
+        this.toast(`${r.styleCode}: ${r.patchMsg}`, "error");
+      }
+      return false;
+    }
+  }
+
+  private async applyBulk(): Promise<void> {
+    if (this.applying) return;
+    const indexes = this.results
+      .map((r, i) => ({ r, i }))
+      .filter(x => x.r.selected && this.isApplicable(x.r) && x.r.patchStatus !== "done")
+      .map(x => x.i);
+    if (indexes.length === 0) return;
+
+    this.applying = true;
+    this.renderResults();
+
+    let ok = 0, fail = 0;
+    for (const i of indexes) {
+      const success = await this.applyOne(i, /* fromBulk */ true);
+      if (success) ok++; else fail++;
+      this.renderResults();   // her satırdan sonra UI'yı tazele
+    }
+
+    this.applying = false;
+    this.renderResults();
+    this.toast(`${ok} başarılı, ${fail} hatalı`, fail === 0 ? "success" : "error");
+  }
+
+  private extractRowVersionText(res: any): string | null {
+    if (!res) return null;
+    const entities = Array.isArray(res.entities) ? res.entities : [];
+    for (const e of entities) {
+      if (e && e.name === "StyleCosting" && e.column && (e.column.RowVersionText || e.column.rowVersionText)) {
+        return String(e.column.RowVersionText || e.column.rowVersionText);
+      }
+    }
+    // Bazı response yapılarında doğrudan kolon olmayabilir; fallback olarak ara.
+    return this.deepFindRowVersion(res);
+  }
+
+  private deepFindRowVersion(obj: any): string | null {
+    if (!obj || typeof obj !== "object") return null;
+    if (obj.RowVersionText) return String(obj.RowVersionText);
+    if (obj.rowVersionText) return String(obj.rowVersionText);
+    if (Array.isArray(obj)) {
+      for (const it of obj) {
+        const v = this.deepFindRowVersion(it);
+        if (v) return v;
+      }
+    } else {
+      for (const k of Object.keys(obj)) {
+        const v = this.deepFindRowVersion(obj[k]);
+        if (v) return v;
+      }
+    }
+    return null;
   }
 }
 
