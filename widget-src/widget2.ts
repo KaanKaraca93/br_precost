@@ -31,6 +31,26 @@ const STYLE_STATUS_FILTER = "(Status eq 106 or Status eq 108 or Status eq 102 or
 const BASE_FABRIC_WIDTH = 150;
 const ADJUSTMENT_PER_2CM = 0.01;
 
+// Maliyet kategorileri (Widget 2 — patch widget'ı)
+// Malzeme ve Astar/Garni şimdilik listede yok.
+interface CostCategory {
+  key: string;
+  icon: string;
+  title: string;
+  desc: string;
+  status: "ready" | "wip";
+}
+const COST_CATEGORIES: CostCategory[] = [
+  { key: "ana-kumash",   icon: "🧵", title: "Ana Kumaş Sarf",     desc: "Ana kumaşı eksik modelleri bulup PLM'e sarf yazar", status: "ready" },
+  { key: "iscilik",      icon: "👷", title: "İşçilik",            desc: "İşçilik maliyeti eksik modelleri bulur ve yazar",   status: "wip" },
+  { key: "uretim-paket", icon: "📦", title: "Üretim & Paketleme", desc: "Üretim ve paketleme maliyeti eksik modeller",       status: "wip" },
+];
+
+function getCategory(key: string | null): CostCategory | null {
+  if (!key) return null;
+  return COST_CATEGORIES.find(c => c.key === key) || null;
+}
+
 // Patch akışı sabitleri
 const PLM_VIEW_BASE = "/FASHIONPLM/view/api/view";
 const PLM_PDM_BASE  = "/FASHIONPLM/pdm/api/pdm";
@@ -124,6 +144,7 @@ class CostMissingWidget implements IWidgetInstance {
   private lastRefreshedAt: string | null = null;
 
   // selection state
+  private currentCategory: string | null = null;
   private season:      string = "";
   private brands:      string[] = [];
   private categories:  string[] = [];
@@ -142,6 +163,7 @@ class CostMissingWidget implements IWidgetInstance {
     this.renderShell();
     this.bindAll();
     this.fetchLookup();
+    this.renderCategoryPicker();
   }
 
   settingsSaved(): void {}
@@ -170,12 +192,13 @@ class CostMissingWidget implements IWidgetInstance {
     }
     this.lastRefreshedAt = data ? data.lastRefreshedAt : null;
     this.renderHeader();
-    this.populatePickers();
+    if (this.currentCategory === "ana-kumash") this.populatePickers();
   }
 
   // ── Multi-select pickers ───────────────────────────────────────────────────
 
   private populatePickers(): void {
+    if (this.$el.find("#cm-pick-season").length === 0) return;
     this.renderPicker("season",   "Sezon");
     this.renderPicker("brand",    "Marka");
     this.renderPicker("category", "Kategori");
@@ -233,34 +256,119 @@ class CostMissingWidget implements IWidgetInstance {
       <div style="font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#343a40;background:#f8f9fa;min-height:400px;position:relative;">
 
         <div style="background:#1D5FA3;color:white;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
-          <span style="font-size:14px;font-weight:600;">Maliyeti Eksik Modeller — Ana Kumaş</span>
+          <span id="cm-title" style="font-size:14px;font-weight:600;">Maliyeti Eksik Modeller</span>
           <span style="display:flex;align-items:center;gap:8px;">
             <span id="cm-cache-info" style="font-size:11px;color:rgba(255,255,255,.85);"></span>
             <span style="background:rgba(255,255,255,.2);padding:2px 8px;border-radius:10px;font-size:11px;">PreCost v1</span>
           </span>
         </div>
 
-        <div style="padding:12px 16px;">
-
-          <div style="background:white;border:1px solid #e9ecef;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;box-shadow:0 1px 4px rgba(0,0,0,.08);">
-            <div id="cm-pick-season"   style="flex:1;min-width:160px;"></div>
-            <div id="cm-pick-brand"    style="flex:1.5;min-width:200px;"></div>
-            <div id="cm-pick-category" style="flex:1.5;min-width:200px;"></div>
-            <button id="cm-list" style="padding:7px 16px;background:#1D5FA3;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Listele</button>
-          </div>
-
-          <div id="cm-main">
-            <div style="text-align:center;padding:40px 20px;color:#6c757d;">
-              <div style="font-size:36px;margin-bottom:8px;">📋</div>
-              <p>Sezon, marka(lar) ve kategori(ler) seçip <strong>Listele</strong>'ye basın</p>
-              <p style="font-size:12px;color:#adb5bd;margin-top:6px;">Sadece ana kumaş <code>Quantity</code> değeri 0 veya null olan modeller gösterilir.</p>
-            </div>
-          </div>
-        </div>
+        <div id="cm-content" style="padding:12px 16px;"></div>
 
         <div id="cm-toast" style="position:absolute;bottom:18px;right:18px;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:600;color:white;box-shadow:0 4px 16px rgba(0,0,0,.2);opacity:0;transition:opacity .25s;z-index:1000;pointer-events:none;"></div>
       </div>
     `);
+  }
+
+  private setContent(html: string): void { this.$el.find("#cm-content").html(html); }
+
+  // ── Kategori Picker ────────────────────────────────────────────────────────
+
+  private renderCategoryPicker(): void {
+    this.currentCategory = null;
+    this.$el.find("#cm-title").text("Maliyeti Eksik Modeller");
+
+    const cards = COST_CATEGORIES.map(c => {
+      const wip = c.status !== "ready";
+      const badge = wip
+        ? `<span style="background:#fff3e0;color:#e65100;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">🚧 WIP</span>`
+        : `<span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">HAZIR</span>`;
+      return `<div data-cat="${c.key}" style="border:1px solid #e9ecef;background:white;border-radius:8px;padding:16px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.08);transition:border-color .15s,transform .1s;" onmouseover="this.style.borderColor='#1D5FA3'" onmouseout="this.style.borderColor='#e9ecef'">
+        <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px;">
+          <div style="font-size:32px;">${c.icon}</div>
+          <div style="flex:1;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+              <span style="font-weight:700;font-size:14px;">${c.title}</span>
+              ${badge}
+            </div>
+            <div style="font-size:12px;color:#6c757d;line-height:1.4;">${c.desc}</div>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+
+    this.setContent(`
+      <div style="margin-bottom:14px;">
+        <div style="font-size:13px;font-weight:600;color:#343a40;margin-bottom:4px;">Hangi maliyet kategorisinde işlem yapacaksınız?</div>
+        <div style="font-size:12px;color:#6c757d;">Bir kategori seçin — eksik modelleri listeleyin ve PLM'e yazın.</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">${cards}</div>
+    `);
+  }
+
+  private enterCategory(key: string): void {
+    const cat = getCategory(key);
+    if (!cat) return;
+    if (cat.status !== "ready") {
+      this.renderUnderConstruction(cat);
+      return;
+    }
+    this.currentCategory = key;
+    if (key === "ana-kumash") this.renderAnaKumashShell();
+  }
+
+  private renderUnderConstruction(cat: CostCategory): void {
+    this.currentCategory = cat.key;
+    this.$el.find("#cm-title").html(this.crumbHtml(cat.title));
+    this.setContent(`
+      <div style="background:white;border:1px dashed #e0e0e0;border-radius:8px;padding:60px 20px;text-align:center;">
+        <div style="font-size:48px;margin-bottom:12px;">${cat.icon}</div>
+        <div style="font-size:16px;font-weight:700;color:#343a40;margin-bottom:6px;">${cat.title}</div>
+        <div style="font-size:13px;color:#6c757d;margin-bottom:18px;">${cat.desc}</div>
+        <div style="display:inline-block;background:#fff3e0;color:#e65100;padding:8px 18px;border-radius:20px;font-size:13px;font-weight:600;">🚧 Yapım aşamasında</div>
+        <div style="margin-top:24px;">
+          <button id="cm-back-home2" style="padding:7px 16px;background:#1D5FA3;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">← Kategori Seçimine Dön</button>
+        </div>
+      </div>
+    `);
+  }
+
+  private crumbHtml(title: string): string {
+    return `<button id="cm-back-home" style="background:rgba(255,255,255,.15);color:white;border:none;border-radius:4px;padding:3px 9px;font-size:12px;cursor:pointer;margin-right:6px;">← Kategoriler</button> <span style="opacity:.7;">/</span> ${title}`;
+  }
+
+  private renderAnaKumashShell(): void {
+    this.$el.find("#cm-title").html(this.crumbHtml("🧵 Ana Kumaş — Eksik Modeller"));
+
+    this.setContent(`
+      <div style="background:white;border:1px solid #e9ecef;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;box-shadow:0 1px 4px rgba(0,0,0,.08);">
+        <div id="cm-pick-season"   style="flex:1;min-width:160px;"></div>
+        <div id="cm-pick-brand"    style="flex:1.5;min-width:200px;"></div>
+        <div id="cm-pick-category" style="flex:1.5;min-width:200px;"></div>
+        <button id="cm-list" style="padding:7px 16px;background:#1D5FA3;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Listele</button>
+      </div>
+
+      <div id="cm-main">
+        <div style="text-align:center;padding:40px 20px;color:#6c757d;">
+          <div style="font-size:36px;margin-bottom:8px;">📋</div>
+          <p>Sezon, marka(lar) ve kategori(ler) seçip <strong>Listele</strong>'ye basın</p>
+          <p style="font-size:12px;color:#adb5bd;margin-top:6px;">Sadece ana kumaş <code>Quantity</code> değeri 0 veya null olan modeller gösterilir.</p>
+        </div>
+      </div>
+    `);
+
+    this.populatePickers();
+  }
+
+  private goHome(): void {
+    this.season = "";
+    this.brands = [];
+    this.categories = [];
+    this.results = [];
+    this.bulkConfigs = [];
+    this.totalFetched = 0;
+    this.openPicker = null;
+    this.renderCategoryPicker();
   }
 
   private renderHeader(): void {
@@ -322,6 +430,15 @@ class CostMissingWidget implements IWidgetInstance {
 
     // Listele
     this.$el.on("click", "#cm-list", () => this.runListing());
+
+    // Kategori picker → girilen kategori
+    this.$el.on("click", "[data-cat]", (e: JQueryEventObject) => {
+      const key = $(e.currentTarget).attr("data-cat") as string;
+      this.enterCategory(key);
+    });
+
+    // Header back butonu — kategori seçimine dön
+    this.$el.on("click", "#cm-back-home, #cm-back-home2", () => this.goHome());
 
     // Sonuç tablosu — checkbox & uygula
     this.$el.on("change", ".cm-row-chk", (e: JQueryEventObject) => {
